@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.ipynb_checkpoints/
+
+# C++ / CUDA builds
+build/
+install/
+log/
+*.o
+*.so
+*.a
+compile_commands.json
+
+# Large model artifacts (kept out of git; see docs/plan.md risks)
+*.engine
+*.plan
+*.onnx
+*.safetensors
+*.pt
+*.pth
+*.gguf
+checkpoints/
+models/
+.cache/
+
+# Profiler captures
+*.nsys-rep
+*.ncu-rep
+*.qdrep
+
+# Raw benchmark scratch output (curated results/*.json are committed)
+results/tmp/
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
