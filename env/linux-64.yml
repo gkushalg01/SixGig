@@ -1,0 +1,35 @@
+# SixGig environment for the RTX 4050 laptop (Ubuntu 22.04, driver 570 / CUDA 12.8).
+# Create:  conda env create -f env/linux-64.yml
+# Update:  conda env update -f env/linux-64.yml --prune
+# Decisions: D-006 (torch), D-007 (Python), D-008 (CUDA toolkit), D-009 (TensorRT).
+name: sixgig
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  - python=3.12
+  - pip
+  # CUDA 12.6 toolkit for building custom kernels (D-008); targets sm_89.
+  - cuda-nvcc=12.6
+  - cuda-cudart-dev=12.6
+  - cuda-nvtx-dev=12.6
+  - cuda-profiler-api=12.6
+  - cuda-version=12.6
+  # Host compilers: nvcc 12.6 supports GCC up to 13.
+  - gxx_linux-64=13
+  - gcc_linux-64=13
+  - cmake>=3.28
+  - ninja
+  - pip:
+      - --extra-index-url https://download.pytorch.org/whl/cu126
+      - --extra-index-url https://pypi.nvidia.com
+      - torch==2.14.1+cu126
+      - torchvision==0.29.1+cu126
+      - tensorrt-cu12==11.4.0.106
+      - mujoco==4.0.1
+      - numpy
+      - nvidia-ml-py
+      - psutil
+      - onnx
+      - matplotlib
+      - pytest
