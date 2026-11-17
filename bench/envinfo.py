@@ -45,7 +45,8 @@ def _read(path: str) -> Optional[str]:
 
 def git_info() -> dict:
     commit = _run(["git", "rev-parse", "HEAD"], cwd=REPO_ROOT)
-    status = _run(["git", "status", "--porcelain"], cwd=REPO_ROOT)
+    # Benchmark output under results/ must not make the source tree count as dirty.
+    status = _run(["git", "status", "--porcelain", "--", ".", ":(exclude)results"], cwd=REPO_ROOT)
     return {"commit": commit, "dirty": bool(status) if status is not None else None}
 
 
