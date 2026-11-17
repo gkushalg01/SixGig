@@ -6,9 +6,9 @@ Newest entries first. Each entry says what was done, what was found, and what co
 
 | Todo | Phase | Status | Blocked by |
 |------|-------|--------|------------|
-| Fix the GPU driver: enroll the Secure Boot key (user action) | 0 | Pending | — |
+| Fix the GPU driver (user action) | 0 | Done | — |
 | Scaffold the repo and documents | 0 | Done | — |
-| Set up the environment and benchmark harness (RTX laptop) | 0 | Pending | GPU driver fix, repo scaffold |
+| Set up the environment and benchmark harness (RTX laptop) | 0 | Pending | — |
 | Set up the Mac environment | 0 | Pending | Repo scaffold |
 | Baseline a small VLA | 1 | Pending | Environment and harness |
 | Optimize VLA inference | 1 | Pending | VLA baseline |
@@ -19,6 +19,27 @@ Newest entries first. Each entry says what was done, what was found, and what co
 | Write-up and demo | Final | Pending | Dual-machine integration |
 
 ## Log
+
+### 2026-11-18: GPU driver working after a display freeze
+
+**Done**
+
+- The user got the NVIDIA driver loading. `nvidia-smi` shows the RTX 4050 Laptop GPU with 6141 MiB, driver 570.124.04 and CUDA 12.8. The display server uses about 4 MiB of it.
+- Verified the machine state:
+  - The signing key is enrolled, and Secure Boot is disabled (D-014).
+  - Kernel parameters `i915.force_probe=46a3 modprobe.blacklist=xe` are set permanently in GRUB (D-015).
+  - `i915` drives the Intel iGPU (`card1`) and `nvidia` drives the RTX 4050 (`card2`). PRIME mode is on-demand.
+- Recorded D-014 and D-015, marked D-005 as partly superseded, and added glossary entries for `i915`/`xe`, kernel parameters and PRIME on-demand.
+
+**Found**
+
+- **Cause of the freeze:** boot logs from 2026-11-17 to 18 show `xe` trying to claim the Alder Lake-P iGPU (46a3), which it does not officially support on kernel 6.8, followed by hung tasks and a boot that stopped logging after about 14 seconds. Blacklisting `xe` fixed it.
+- `xe.blacklist=1`, tried in one boot, is not a valid kernel parameter and was ignored. `modprobe.blacklist=xe` is the correct form.
+- **Power readings spike:** `nvidia-smi` sometimes reports 590 W against a 60 W cap. Of three samples one second apart, the first read 590.01 W and the next two read about 12.6 W. So the harness (D-012) must reject impossible power samples instead of averaging them. Compute capability is confirmed as 8.9 (sm_89).
+
+**Next**
+
+- Create the `sixgig` conda environment and build the benchmark harness.
 
 ### 2026-11-17: repository scaffold
 

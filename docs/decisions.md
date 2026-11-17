@@ -14,7 +14,7 @@ Status values:
 | [D-002](#d-002-flagship-scope) | Flagship scope: dual-machine stack from P1 and P2, P4 as stretch | Accepted |
 | [D-003](#d-003-mujoco-based-simulation-not-isaac) | MuJoCo-based simulation, not Isaac Sim or Isaac Lab | Accepted |
 | [D-004](#d-004-small-vla-models) | Small VLA models (about 0.5B to 3B parameters) | Accepted |
-| [D-005](#d-005-keep-nvidia-driver-570-and-enroll-the-secure-boot-key) | Keep NVIDIA driver 570 and enroll the Secure Boot key | Accepted |
+| [D-005](#d-005-keep-nvidia-driver-570-and-enroll-the-secure-boot-key) | Keep NVIDIA driver 570 and enroll the Secure Boot key | Partly superseded by D-014 |
 | [D-006](#d-006-pytorch-2141-with-cuda-126) | PyTorch 2.14.1 with CUDA 12.6 | Accepted |
 | [D-007](#d-007-python-312-in-a-conda-environment) | Python 3.12 in a conda environment | Accepted |
 | [D-008](#d-008-cuda-126-toolkit-inside-the-conda-environment) | CUDA 12.6 toolkit inside the conda environment | Proposed |
@@ -23,6 +23,8 @@ Status values:
 | [D-011](#d-011-split-work-across-the-two-machines-by-strength) | Split work across the two machines by strength | Accepted |
 | [D-012](#d-012-benchmark-discipline) | Benchmark discipline | Accepted |
 | [D-013](#d-013-living-project-documents) | Living project documents in `docs/` | Accepted |
+| [D-014](#d-014-run-with-secure-boot-disabled) | Run with Secure Boot disabled | Accepted |
+| [D-015](#d-015-force-i915-for-the-intel-igpu-and-blacklist-xe) | Force `i915` for the Intel iGPU and blacklist `xe` | Accepted |
 
 ---
 
@@ -70,7 +72,7 @@ Status values:
 ## D-005: Keep NVIDIA driver 570 and enroll the Secure Boot key
 
 - **Date:** 2026-11-17
-- **Status:** Accepted
+- **Status:** Partly superseded by D-014. Keeping driver 570 still stands. The key was enrolled, but the machine now runs with Secure Boot disabled.
 - **Context:** Driver 570.124.04 is installed and was built by DKMS for kernel 6.8.0-57. Secure Boot is enabled. The module is signed with a local key (`/var/lib/shim-signed/mok/MOK.der`) that is not enrolled, so the kernel rejects it ("Key was rejected by service") and `nvidia-smi` fails.
 - **Decision:** Keep driver 570 and enroll the existing key. The user does this because it needs sudo and a reboot:
   1. Run `sudo mokutil --import /var/lib/shim-signed/mok/MOK.der` and set a one-time password.
@@ -184,3 +186,44 @@ Status values:
   - Any scope change updates `plan.md`.
 - **Alternatives considered:** Documents at the repo root, or a compact decision table only. The user chose `docs/` and the numbered format.
 - **Consequences:** Documentation is updated in the same commit as the change it describes.
+
+## D-014: Run with Secure Boot disabled
+
+- **Date:** 2026-11-18
+- **Status:** Accepted. Supersedes the Secure Boot part of D-005.
+- **Context:**
+  - D-005 planned to enroll the local signing key so the NVIDIA module would load with Secure Boot on.
+  - The key is now enrolled: `mokutil --test-key` reports "already enrolled".
+  - Secure Boot is disabled, according to `mokutil --sb-state` and every boot log from the evening of 2026-11-17 onwards.
+  - With it disabled, the kernel loads the module without checking its signature. It logs "module verification failed ... tainting kernel", which is expected and harmless here.
+  - The display freeze fixed by D-015 happened during the same work, so the machine was only just stable.
+- **Decision:** Keep Secure Boot disabled for now. Driver 570.124.04 loads, and `nvidia-smi` reports the RTX 4050 with 6141 MiB and CUDA 12.8.
+- **Alternatives considered:** Re-enable Secure Boot now that the key is enrolled. This should work, because DKMS signs the module with that key. It is postponed because it means another firmware change and reboot on a machine that has only just stopped freezing.
+- **Consequences:**
+  - No effect on the project's software stack; D-006 to D-009 are unchanged.
+  - Re-enabling Secure Boot later is an optional hardening step. If it is done, `nvidia-smi` must be re-checked afterwards.
+
+## D-015: Force `i915` for the Intel iGPU and blacklist `xe`
+
+- **Date:** 2026-11-18
+- **Status:** Accepted
+- **Context:**
+  - The laptop is a hybrid system: an Intel Alder Lake-P UHD iGPU (PCI ID `8086:46a3`) drives the internal panel, and the RTX 4050 runs in PRIME on-demand mode.
+  - Kernel 6.8.0-57 includes two Intel graphics drivers: `i915` and the newer `xe`.
+  - In boots that also had `nomodeset`, `xe` tried to claim the iGPU and logged that 46a3 "is not officially supported by xe driver in this kernel version".
+  - The desktop then froze: one boot logged hung tasks, and a normal boot stopped logging after about 14 seconds.
+  - `xe.blacklist=1`, tried in one boot, is not a valid parameter; the kernel logged "unknown parameter 'blacklist' ignored".
+- **Decision:** Set `GRUB_CMDLINE_LINUX_DEFAULT="quiet splash i915.force_probe=46a3 modprobe.blacklist=xe"` in `/etc/default/grub`.
+  - `modprobe.blacklist=xe` stops `xe` from loading.
+  - `i915.force_probe=46a3` makes `i915` claim the iGPU.
+
+  Since this change, `i915` drives the iGPU (`card1`), `nvidia` drives the dGPU (`card2`), and the system boots and stays up.
+- **Alternatives considered:**
+  - `nomodeset`. This disables kernel modesetting for every GPU, which leaves the panel without acceleration. It is only for recovery.
+  - `xe.force_probe=46a3` with `i915.force_probe=!46a3`, as the kernel message suggests. This would use a driver that is experimental for this GPU on this kernel.
+  - `modprobe.blacklist=xe` alone. One boot with only this option already had `i915` loaded, so `i915.force_probe=46a3` may be redundant on this kernel. It is kept because the combination is the one verified to be stable.
+- **Consequences:**
+  - The parameters are permanent through GRUB and apply to every kernel installed.
+  - After a kernel upgrade, check that `i915` still drives the iGPU and that `nvidia-smi` works.
+  - Drop the `xe` blacklist only if a future kernel officially supports 46a3 under `xe` and the switch is tested.
+  - The NVIDIA compute stack is unaffected. The laptop panel stays on the Intel iGPU, so the display server holds only about 4 MiB of the 6 GB of VRAM.

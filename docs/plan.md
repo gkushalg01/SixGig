@@ -12,7 +12,7 @@ Build a simulation-only robot manipulation stack that shows HPC and GPU skill in
 
 | Machine | Role | Key facts |
 |---------|------|-----------|
-| RTX laptop | System 1: inference and control | i7-12650H, RTX 4050 6 GB (sm_89), 23 GB RAM, Ubuntu 22.04, driver 570 |
+| RTX laptop | System 1: inference and control | i7-12650H, RTX 4050 6 GB (sm_89), 23 GB RAM, Ubuntu 22.04, driver 570 (CUDA 12.8), boot fix in D-015 |
 | MacBook M4 Pro | System 2 and simulator | 24 GB unified memory, MLX, no CUDA |
 
 ## Architecture
@@ -43,7 +43,7 @@ P3 (GPU-parallel RL) and P6 (Gaussian splatting SLAM) are out of scope (D-002).
 
 ### Phase 0: environment and benchmark harness
 
-- **User action first:** enroll the Secure Boot key so the NVIDIA driver loads (steps in D-005). Done when `nvidia-smi` shows the RTX 4050.
+- **Driver fix (done 2026-11-18):** the NVIDIA driver loads and `nvidia-smi` shows the RTX 4050 (D-014, D-015).
 - Create the `sixgig` conda environment with Python 3.12 (D-007), torch 2.14.1+cu126 (D-006) and the conda-forge CUDA 12.6 toolkit (D-008).
 - Install and smoke-test TensorRT (D-009), MuJoCo and LIBERO (D-003), and ROS 2 Jazzy from RoboStack (D-010).
 - Build a benchmark harness that records the metrics in D-012 and writes JSON to `results/`.
@@ -115,7 +115,7 @@ SixGig/
 
 | Risk | Mitigation |
 |------|------------|
-| The NVIDIA driver does not load | Enroll the Secure Boot key (D-005). This blocks all GPU work. |
+| The NVIDIA driver stops loading, or the display freezes again, after a kernel or driver update | Re-check `nvidia-smi` and which driver owns each card after every update. Keep the D-015 kernel parameters. |
 | VLM backbone export to TensorRT fails | Use `torch.compile` plus quantization for the backbone and TensorRT for the rest. |
 | TensorRT 11 wheel incompatible with driver 570 | Fall back to TensorRT 10.x for CUDA 12 (D-009). |
 | RoboStack Jazzy is missing packages | Use Zenoh transport without ROS 2 for P5 (D-010). |

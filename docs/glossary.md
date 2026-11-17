@@ -75,6 +75,9 @@ Terms for everything this project implements or depends on. Each entry says what
 
 ## Environment
 
-- **Secure Boot / MOK (Machine Owner Key):** UEFI module signing. The NVIDIA driver loads only if its signing key is enrolled. See D-005.
+- **Secure Boot / MOK (Machine Owner Key):** UEFI module signing. With Secure Boot on, the NVIDIA module loads only if its signing key is enrolled. The key is enrolled, but Secure Boot is currently off. See D-005 and D-014.
 - **DKMS:** rebuilds the NVIDIA kernel module, and re-signs it, when the kernel updates.
 - **conda environment `sixgig`:** the isolated Python 3.12 environment for the project. See D-007.
+- **`i915` / `xe`:** the two Intel graphics kernel drivers. `i915` is the mature one and drives the laptop's Alder Lake iGPU (PCI ID 46a3). `xe` is the newer one and is blacklisted because it froze this machine. See D-015.
+- **Kernel command-line parameters:** boot options set in `GRUB_CMDLINE_LINUX_DEFAULT`, here `i915.force_probe=46a3 modprobe.blacklist=xe`. See D-015.
+- **PRIME on-demand:** the hybrid-graphics mode in which the Intel iGPU drives the display and the NVIDIA GPU runs only the work sent to it, such as CUDA.
