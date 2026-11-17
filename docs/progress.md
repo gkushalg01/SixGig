@@ -8,17 +8,67 @@ Newest entries first. Each entry says what was done, what was found, and what co
 |------|-------|--------|------------|
 | Fix the GPU driver (user action) | 0 | Done | — |
 | Scaffold the repo and documents | 0 | Done | — |
-| Set up the environment and benchmark harness (RTX laptop) | 0 | Pending | — |
+| Set up the environment and benchmark harness (RTX laptop) | 0 | Done | — |
+| Install LIBERO | 1 | Pending | — |
+| Install ROS 2 Jazzy from RoboStack (RTX laptop) | 2 | Pending | — |
 | Set up the Mac environment | 0 | Pending | Repo scaffold |
-| Baseline a small VLA | 1 | Pending | Environment and harness |
+| Baseline a small VLA | 1 | Pending | LIBERO |
 | Optimize VLA inference | 1 | Pending | VLA baseline |
 | Port the VLA to MLX | 1 | Pending | VLA baseline, Mac environment |
-| Build the CUDA MPPI controller | 2 | Pending | Environment and harness |
+| Build the CUDA MPPI controller | 2 | Pending | ROS 2 (for the node only; the CUDA library can start now) |
 | Integrate the dual-machine stack | 3 | Pending | VLA optimization, CUDA MPPI, Mac environment |
 | GPU perception pipeline (stretch) | Stretch | Pending | Environment and harness |
 | Write-up and demo | Final | Pending | Dual-machine integration |
 
 ## Log
+
+### 2026-11-18: Phase 0 environment and benchmark harness
+
+**Done**
+
+- Created the `sixgig` conda environment from [`env/linux-64.yml`](../env/linux-64.yml). It takes 15 GB.
+
+  | Component | Version |
+  |-----------|---------|
+  | Python | 3.12.16 |
+  | torch / torchvision | 2.14.1+cu126 / 0.29.1+cu126 (cuDNN 9.10.2) |
+  | nvcc | 12.6.85, conda-forge |
+  | Host compiler | GCC 13.4, conda-forge |
+  | CMake | 4.5.0 |
+  | TensorRT | 11.4.0.106 (`tensorrt-cu12`) |
+  | MuJoCo | 4.0.1 |
+  | numpy | 2.5.5 |
+
+- Built the benchmark harness in [`bench/`](../bench/) (D-016), with 8 unit tests that pass.
+- Wrote four smoke workloads. All pass from commit `7729dc9` with a clean tree. Records are in [`results/phase0/`](../results/phase0/).
+- Confirmed D-008 and D-009, and recorded D-016 (harness design), D-017 (strongly typed TensorRT networks) and D-018 (no co-author trailer). Added glossary entries for the harness and environment.
+- Removed the Copilot `Co-authored-by` trailer from all commits at the user's request (D-018). The file contents are unchanged.
+
+**Phase 0 results (RTX 4050 Laptop, 60 W cap, on AC power)**
+
+| Workload | p50 | p99 | Headline |
+|----------|-----|-----|----------|
+| CUDA SAXPY, 2²⁵ floats, CUDA events | 2.34 ms | 2.71 ms | 172 GB/s, 90% of the theoretical 192 GB/s; zero error |
+| torch GEMM 4096³ FP32 | 25.1 ms | 25.5 ms | 5.5 TFLOPS |
+| torch GEMM 4096³ TF32 | 12.9 ms | 13.3 ms | 10.7 TFLOPS |
+| torch GEMM 4096³ FP16 | 6.27 ms | 6.28 ms | 21.9 TFLOPS |
+| torch GEMM 4096³ BF16 | 6.15 ms | 6.20 ms | 22.4 TFLOPS |
+| TensorRT FP16 MLP, 4×1024, batch 64 | 32.2 µs | 33.5 µs | 16.7 TFLOPS; build 1.3 s; max error 0.0068 vs PyTorch |
+| MuJoCo 7-DoF arm, 10k steps, CPU | 9.4 µs/step | 10.7 µs/step | 106k steps/s, 212× real time |
+
+**Found**
+
+- **Power-limited:** every heavy GPU run hit the 60 W board cap (`sw_power_cap`). FP32 and TF32 GEMMs also showed `sw_thermal`, with SM clocks dropping to about 1700 MHz. Peak temperature was about 61 °C. GEMM throughput on this laptop is set by power, not by compute units, so later phases should report results as power-limited where they are.
+- **Power glitch filter works:** an earlier full run rejected 6 readings of 590 W during SAXPY. The final run had none.
+- **Dirty flag bug, fixed:** benchmark output under `results/` made the tree look dirty. The check now ignores `results/`. The first set of records was moved to the gitignored `results/tmp/superseded-dirty-flag/` and the suite was re-run.
+- **No `trtexec`:** the `tensorrt-cu12` wheel does not include it (D-009).
+- **No platform profile:** this laptop exposes no ACPI platform profile, so `platform_profile` is recorded as null. The CPU governor is `powersave` with energy-performance preference `performance`.
+
+**Next**
+
+- Phase 1: install LIBERO and baseline a small VLA (SmolVLA-class) in FP32 and FP16.
+- Phase 2: start the CUDA MPPI library. ROS 2 is needed only for the node.
+- Mac: set up the environment there.
 
 ### 2026-11-18: GPU driver working after a display freeze
 

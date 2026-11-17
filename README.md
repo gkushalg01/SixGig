@@ -2,7 +2,18 @@
 
 SixGig is a robot manipulation stack, run entirely in simulation, that does real-time AI inference and control on a laptop RTX 4050 with 6 GB of VRAM. A MacBook M4 Pro hosts the simulator and a language-model task planner. Every performance claim is backed by a reproducible benchmark file in [`results/`](results/).
 
-> **Status:** Phase 0 (environment and benchmark harness). See [docs/progress.md](docs/progress.md).
+> **Status:** Phase 0 is complete on the RTX laptop. The environment and benchmark harness work, and the smoke results are in [`results/phase0/`](results/phase0/). See [docs/progress.md](docs/progress.md).
+
+## Quick start (RTX laptop)
+
+```bash
+conda env create -f env/linux-64.yml
+conda activate sixgig
+python -m pytest bench/tests -q   # harness unit tests
+python -m bench.smoke             # Phase 0 smoke benchmarks -> results/phase0/
+```
+
+Details are in [bench/README.md](bench/README.md).
 
 ## Components
 

@@ -17,14 +17,17 @@ Status values:
 | [D-005](#d-005-keep-nvidia-driver-570-and-enroll-the-secure-boot-key) | Keep NVIDIA driver 570 and enroll the Secure Boot key | Partly superseded by D-014 |
 | [D-006](#d-006-pytorch-2141-with-cuda-126) | PyTorch 2.14.1 with CUDA 12.6 | Accepted |
 | [D-007](#d-007-python-312-in-a-conda-environment) | Python 3.12 in a conda environment | Accepted |
-| [D-008](#d-008-cuda-126-toolkit-inside-the-conda-environment) | CUDA 12.6 toolkit inside the conda environment | Proposed |
-| [D-009](#d-009-tensorrt-from-the-cuda-12-wheel) | TensorRT from the CUDA 12 wheel | Proposed |
+| [D-008](#d-008-cuda-126-toolkit-inside-the-conda-environment) | CUDA 12.6 toolkit inside the conda environment | Accepted |
+| [D-009](#d-009-tensorrt-from-the-cuda-12-wheel) | TensorRT from the CUDA 12 wheel | Accepted |
 | [D-010](#d-010-ros-2-jazzy-through-robostack-on-both-machines) | ROS 2 Jazzy through RoboStack on both machines | Proposed |
 | [D-011](#d-011-split-work-across-the-two-machines-by-strength) | Split work across the two machines by strength | Accepted |
 | [D-012](#d-012-benchmark-discipline) | Benchmark discipline | Accepted |
 | [D-013](#d-013-living-project-documents) | Living project documents in `docs/` | Accepted |
 | [D-014](#d-014-run-with-secure-boot-disabled) | Run with Secure Boot disabled | Accepted |
 | [D-015](#d-015-force-i915-for-the-intel-igpu-and-blacklist-xe) | Force `i915` for the Intel iGPU and blacklist `xe` | Accepted |
+| [D-016](#d-016-benchmark-harness-design) | Benchmark harness design | Accepted |
+| [D-017](#d-017-strongly-typed-tensorrt-networks) | Strongly typed TensorRT networks | Accepted |
+| [D-018](#d-018-no-copilot-co-author-trailer-in-commits) | No Copilot co-author trailer in commits | Accepted |
 
 ---
 
@@ -114,27 +117,30 @@ Status values:
 ## D-008: CUDA 12.6 toolkit inside the conda environment
 
 - **Date:** 2026-11-17
-- **Status:** Proposed, confirmed in Phase 0
+- **Status:** Accepted. Confirmed 2026-11-18: conda-forge `cuda-nvcc` 12.6.85 with conda-forge GCC 13.4 builds and runs the sm_89 SAXPY smoke kernel with zero error.
 - **Context:** The system toolkit at `/usr/local/cuda` is 12.1, while torch uses the CUDA 12.6 runtime. Custom kernels for P2 and P4 should be built with a matching `nvcc`, and Ada GPUs (sm_89) are supported from 12.1 onward.
 - **Decision:** Install `cuda-nvcc` and the CUDA 12.6 libraries from conda-forge into the `sixgig` environment. Builds target `sm_89`.
 - **Alternatives considered:**
   - Use the system 12.1 toolkit. Mismatched versions risk ABI problems when building torch extensions.
   - Install 12.6 system-wide. Needs sudo.
-- **Consequences:** CMake must find the environment's toolkit, not `/usr/local/cuda`.
+- **Consequences:**
+  - CMake must find the environment's toolkit, not `/usr/local/cuda`.
+  - Activating the environment sets `NVCC_PREPEND_FLAGS=-ccbin=<env>/x86_64-conda-linux-gnu-c++`, so nvcc always uses the conda GCC 13 rather than the system GCC 11.
+  - Build commands must run inside the activated environment (or `conda run -n sixgig`).
 
 ## D-009: TensorRT from the CUDA 12 wheel
 
 - **Date:** 2026-11-17
-- **Status:** Proposed, confirmed in Phase 0
+- **Status:** Accepted. Confirmed 2026-11-18: `tensorrt-cu12` 11.4.0.106 builds and runs an FP16 engine on driver 570 whose output matches PyTorch. The TensorRT 10.x fallback is not needed.
 - **Context:** TensorRT 11.4.0.106 is published as both `tensorrt-cu12` and `tensorrt-cu13`. Driver 570 supports CUDA 12 only.
 - **Decision:** Use `tensorrt-cu12` 11.4 from pip. Phase 0 checks that it runs on driver 570 and with the CUDA 12.6 runtime. If not, fall back to the newest TensorRT 10.x release built for CUDA 12.
 - **Alternatives considered:** Installing TensorRT from the system tarball or apt. Needs sudo and is harder to reproduce.
-- **Consequences:** The `trtexec` command-line tool may not come with the wheel, so engines are built from Python or C++.
+- **Consequences:** The wheel does not include the `trtexec` command-line tool, so engines are built from Python or C++.
 
 ## D-010: ROS 2 Jazzy through RoboStack on both machines
 
 - **Date:** 2026-11-17
-- **Status:** Proposed, confirmed in Phase 0
+- **Status:** Proposed. To be confirmed at the start of Phase 2, when the MPPI node first needs ROS 2.
 - **Context:**
   - ROS 2 is not installed.
   - Native ROS 2 Humble on Ubuntu 22.04 is tied to Python 3.10, which conflicts with D-007.
@@ -227,3 +233,42 @@ Status values:
   - After a kernel upgrade, check that `i915` still drives the iGPU and that `nvidia-smi` works.
   - Drop the `xe` blacklist only if a future kernel officially supports 46a3 under `xe` and the switch is tested.
   - The NVIDIA compute stack is unaffected. The laptop panel stays on the Intel iGPU, so the display server holds only about 4 MiB of the 6 GB of VRAM.
+
+## D-016: Benchmark harness design
+
+- **Date:** 2026-11-18
+- **Status:** Accepted
+- **Context:** D-012 sets what every benchmark must record. Every phase needs the same harness, and some workloads time themselves on the GPU (CUDA events) instead of on the host.
+- **Decision:** A small Python package, `bench/`, that every phase imports.
+  - A `Benchmark` context manager writes one JSON record per run to `results/<suite>/<name>-<timestamp>.json`. It writes the record even when the run fails, with `status: "error"`.
+  - Latency comes either from `measure()` (host clock, with an optional device synchronize after each call) or from `add_samples()` (times measured elsewhere, such as CUDA events). Each record says which, in `latency_source`.
+  - All raw samples are stored alongside p50, p95 and p99, so the statistics can be recomputed.
+  - A background thread samples NVML every 50 ms: power, temperature, clocks, utilization, memory, performance states and clock-limit reasons.
+  - Power readings above 1.5 times the enforced limit are dropped and counted, because of this laptop's 590 W glitch.
+  - The git dirty check ignores `results/`, so benchmark output does not mark the source tree dirty.
+  - Suites may nest (for example `tmp/quick`). `results/tmp/` is gitignored for scratch runs. Only curated suites such as `results/phase0/` are committed.
+  - The statistics use the standard library only, so the harness has no hard dependencies beyond `nvidia-ml-py`.
+- **Alternatives considered:**
+  - `pytest-benchmark`. It has no GPU telemetry, and its JSON layout does not match D-012.
+  - Nsight Systems for every run. It is too heavy for routine runs and is kept for profiling in Phase 2.
+- **Consequences:**
+  - Every number in the README can be traced to a JSON file.
+  - Records include the commit and dirty flag, so benchmarks for the record should run from a committed tree.
+
+## D-017: Strongly typed TensorRT networks
+
+- **Date:** 2026-11-18
+- **Status:** Accepted
+- **Context:** Recent TensorRT releases deprecate builder precision flags such as FP16 in favour of strongly typed networks. In those networks, precision follows the tensor types the model declares.
+- **Decision:** Create TensorRT networks with `NetworkDefinitionCreationFlag.STRONGLY_TYPED` and set precision through tensor and weight types. The Phase 0 smoke test builds its network with the TensorRT network API. The ONNX export path is first exercised in Phase 1, on real models.
+- **Alternatives considered:** Weakly typed networks with `BuilderFlag.FP16`. This uses the deprecated flags, and TensorRT is then free to choose layer precisions itself, which makes results harder to explain.
+- **Consequences:** In Phase 1, models are cast or quantized to the target precision before export, so each engine's precision is stated explicitly, not chosen by the builder.
+
+## D-018: No Copilot co-author trailer in commits
+
+- **Date:** 2026-11-18
+- **Status:** Accepted
+- **Context:** The user asked for the assistant's `Co-authored-by` trailer to be removed from all commits.
+- **Decision:** Commits are authored by the user only, with no co-author trailer. The three earlier commits were rewritten with `git filter-branch --msg-filter` to remove it. The repository had no remote, and the rewritten tree was checked to be identical to the original.
+- **Alternatives considered:** None. This was a direct instruction.
+- **Consequences:** Commit hashes from before 2026-11-18 02:00 changed. The scaffold commit `4486bb6` is now `973e576`, and the driver-fix commit `738508c` is now `1398db3`.

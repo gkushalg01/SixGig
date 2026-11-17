@@ -29,6 +29,8 @@ Terms for everything this project implements or depends on. Each entry says what
 - **ONNX:** a portable model format, used as the export path into TensorRT.
 - **TensorRT:** NVIDIA's inference compiler. It turns a model into an optimized engine with fused kernels and tuned precision. Phase 1 and P4. See D-009.
 - **TensorRT engine:** the compiled, GPU-specific output of TensorRT. It is tied to the GPU model and TensorRT version.
+- **Strongly typed network:** a TensorRT network whose layer precisions follow the declared tensor types instead of being chosen by the builder. Used for all engines; see D-017.
+- **TensorRT network API:** building a TensorRT network layer by layer in code (matrix multiply, elementwise, activation) rather than importing ONNX. Used by the Phase 0 smoke test.
 - **`torch.compile`:** PyTorch's just-in-time compiler. It is the fallback when TensorRT export fails.
 - **MLX:** Apple's array framework for Apple-silicon unified memory. Used for the VLA port and the VLM planner on the Mac.
 - **Pareto frontier:** the set of configurations where no other configuration is better on every axis at once. Here the axes are task success, latency and VRAM. It is the headline chart of Phase 1.
@@ -68,7 +70,21 @@ Terms for everything this project implements or depends on. Each entry says what
 
 ## Measurement
 
-- **Benchmark harness:** the shared tool that runs workloads and records the metrics required by D-012. Built in Phase 0.
+- **Benchmark harness:** the shared tool in [`bench/`](../bench/) that runs workloads and records the metrics required by D-012. Built in Phase 0. See D-016.
+- **Benchmark record:** one JSON file per run in `results/<suite>/`, holding latency statistics and raw samples, GPU telemetry, environment, metrics and task success.
+- **Suite:** a named group of records, such as `phase0`. Suites under `tmp/` are scratch runs and are not committed.
+- **Warm-up iterations:** calls run before timing starts so caches, clocks and lazy initialization settle. They are never recorded.
+- **Host clock vs CUDA events:** two ways to time GPU work. The host clock times one call plus a device synchronize, so it includes launch overhead. CUDA events time on the GPU itself and measure only kernel execution.
+- **NVML (NVIDIA Management Library):** the driver API the harness polls for power, temperature, clocks and memory. `nvidia-smi` is built on it.
+- **Clock-limit reasons:** NVML flags saying why the GPU is not at full clock. `sw_power_cap` means power-limited, and `sw_thermal` or `hw_thermal` mean temperature-limited.
+- **Power cap:** the enforced board power limit, 60 W on this RTX 4050. Heavy GEMMs reach it, so their throughput is limited by power, not by compute units.
+- **Power glitch rejection:** dropping NVML power readings above 1.5 times the cap, such as the 590 W readings this laptop sometimes reports.
+- **Dirty flag:** whether the git tree had uncommitted source changes when a record was made. Changes under `results/` are ignored.
+- **SAXPY:** `y = a·x + y` over a large array. It is memory-bound, so it measures achieved memory bandwidth. Used as the Phase 0 custom-kernel smoke test.
+- **Effective bandwidth:** bytes moved by a kernel divided by its time. Compared with the RTX 4050's theoretical 192 GB/s (96-bit bus at 16 Gbps).
+- **GEMM / TFLOPS:** general matrix multiply, and trillions of floating-point operations per second (2n³ per n×n GEMM).
+- **TF32:** an NVIDIA tensor-core format with FP32 range and reduced mantissa. It roughly doubles FP32 GEMM throughput.
+- **Real-time factor:** simulated time divided by wall-clock time. Above 1 means faster than real time.
 - **p50 / p95 / p99:** latency percentiles. p99 shows the worst-case behaviour that matters for control.
 - **Thermal throttling:** a laptop GPU lowering its clocks when hot, which distorts benchmarks unless recorded.
 - **Task success rate:** the fraction of seeded episodes in which the robot completes the task.
@@ -77,7 +93,9 @@ Terms for everything this project implements or depends on. Each entry says what
 
 - **Secure Boot / MOK (Machine Owner Key):** UEFI module signing. With Secure Boot on, the NVIDIA module loads only if its signing key is enrolled. The key is enrolled, but Secure Boot is currently off. See D-005 and D-014.
 - **DKMS:** rebuilds the NVIDIA kernel module, and re-signs it, when the kernel updates.
-- **conda environment `sixgig`:** the isolated Python 3.12 environment for the project. See D-007.
+- **conda environment `sixgig`:** the isolated Python 3.12 environment for the project, defined in [`env/linux-64.yml`](../env/linux-64.yml). See D-007.
+- **conda-forge compilers:** GCC 13 installed inside the environment. Activation points nvcc at it through `NVCC_PREPEND_FLAGS=-ccbin=...`, so the system GCC 11 is not used. See D-008.
+- **`conda run -n sixgig`:** runs a command inside the environment without activating a shell. Used by scripts and automation.
 - **`i915` / `xe`:** the two Intel graphics kernel drivers. `i915` is the mature one and drives the laptop's Alder Lake iGPU (PCI ID 46a3). `xe` is the newer one and is blacklisted because it froze this machine. See D-015.
 - **Kernel command-line parameters:** boot options set in `GRUB_CMDLINE_LINUX_DEFAULT`, here `i915.force_probe=46a3 modprobe.blacklist=xe`. See D-015.
 - **PRIME on-demand:** the hybrid-graphics mode in which the Intel iGPU drives the display and the NVIDIA GPU runs only the work sent to it, such as CUDA.

@@ -44,12 +44,13 @@ P3 (GPU-parallel RL) and P6 (Gaussian splatting SLAM) are out of scope (D-002).
 ### Phase 0: environment and benchmark harness
 
 - **Driver fix (done 2026-11-18):** the NVIDIA driver loads and `nvidia-smi` shows the RTX 4050 (D-014, D-015).
-- Create the `sixgig` conda environment with Python 3.12 (D-007), torch 2.14.1+cu126 (D-006) and the conda-forge CUDA 12.6 toolkit (D-008).
-- Install and smoke-test TensorRT (D-009), MuJoCo and LIBERO (D-003), and ROS 2 Jazzy from RoboStack (D-010).
-- Build a benchmark harness that records the metrics in D-012 and writes JSON to `results/`.
-- Set up the Mac environment: conda, MLX, mlx-vlm, MuJoCo, RoboStack.
+- **Done 2026-11-18:** created the `sixgig` conda environment from [`env/linux-64.yml`](../env/linux-64.yml) with Python 3.12 (D-007), torch 2.14.1+cu126 (D-006), the conda-forge CUDA 12.6 toolkit (D-008) and TensorRT 11.4 (D-009).
+- **Done 2026-11-18:** built the benchmark harness in [`bench/`](../bench/) (D-016). All four smoke workloads pass and their records are in [`results/phase0/`](../results/phase0/).
+- **Remaining:** LIBERO (D-003), which moves to the start of Phase 1 where it is first used.
+- **Remaining:** ROS 2 Jazzy from RoboStack (D-010), which moves to the start of Phase 2 where the MPPI node first needs it.
+- **Remaining:** the Mac environment (conda, MLX, mlx-vlm, MuJoCo, RoboStack), which has to be run on the Mac.
 
-**Exit criteria:** a trivial CUDA kernel, a torch matmul, a TensorRT engine and a MuJoCo episode each run and produce a harness JSON file.
+**Exit criteria (met 2026-11-18):** a trivial CUDA kernel, a torch matmul, a TensorRT engine and a MuJoCo episode each run and produce a harness JSON file.
 
 ### Phase 1 (P1): VLA inference optimization
 
@@ -117,7 +118,8 @@ SixGig/
 |------|------------|
 | The NVIDIA driver stops loading, or the display freezes again, after a kernel or driver update | Re-check `nvidia-smi` and which driver owns each card after every update. Keep the D-015 kernel parameters. |
 | VLM backbone export to TensorRT fails | Use `torch.compile` plus quantization for the backbone and TensorRT for the rest. |
-| TensorRT 11 wheel incompatible with driver 570 | Fall back to TensorRT 10.x for CUDA 12 (D-009). |
+| TensorRT 11 wheel incompatible with driver 570 | Resolved 2026-11-18: TensorRT 11.4 (cu12) builds and runs on driver 570 (D-009). |
 | RoboStack Jazzy is missing packages | Use Zenoh transport without ROS 2 for P5 (D-010). |
 | Thermal noise in benchmarks | Follow the D-012 recording rules; run plugged in in performance mode. |
-| Root disk is 82% full (21 GB free) | Store model weights and datasets in one cache directory and prune engines and checkpoints. |
+| Disk space: 56 GB free after the 15 GB `sixgig` environment; VLA weights, datasets and engines will grow | Store model weights and datasets in one cache directory and prune engines and checkpoints. |
+| GPU throughput is capped by the 60 W board power limit, not by compute units | Record power and clock-limit reasons in every run (D-016), and report results as power-limited where they are. |
