@@ -2,7 +2,7 @@
 
 **Project:** SixGig, a dual-machine robotics AI stack built to run in real time inside the RTX 4050's 6 GB of VRAM.
 
-Related documents: [decisions.md](./decisions.md) · [glossary.md](./glossary.md) · [progress.md](./progress.md)
+Related documents: [decisions.md](./decisions.md) · [glossary.md](./glossary.md) · [progress.md](./progress.md) · [commands.md](./commands.md)
 
 ## Goal
 
@@ -48,7 +48,7 @@ P3 (GPU-parallel RL) and P6 (Gaussian splatting SLAM) are out of scope (D-002).
 - **Done 2026-11-18:** built the benchmark harness in [`bench/`](../bench/) (D-016). All four smoke workloads pass and their records are in [`results/phase0/`](../results/phase0/).
 - **Remaining:** LIBERO (D-003). Done 2026-11-18 at the start of Phase 1 (D-019, D-021, D-024).
 - **Remaining:** ROS 2 Jazzy from RoboStack (D-010), which moves to the start of Phase 2 where the MPPI node first needs it.
-- **Remaining:** the Mac environment (conda, MLX, mlx-vlm, MuJoCo, RoboStack), which has to be run on the Mac.
+- **Remaining:** the Mac environment (conda, MLX, mlx-vlm, MuJoCo, RoboStack), which has to be run on the Mac. Drafted 2026-11-18 as [`env/osx-arm64.yml`](../env/osx-arm64.yml), without RoboStack; the schedule is the Mac plan in [progress.md](./progress.md).
 
 **Exit criteria (met 2026-11-18):** a trivial CUDA kernel, a torch matmul, a TensorRT engine and a MuJoCo episode each run and produce a harness JSON file.
 
@@ -57,7 +57,7 @@ P3 (GPU-parallel RL) and P6 (Gaussian splatting SLAM) are out of scope (D-002).
 Model: `lerobot/smolvla_libero` through lerobot 0.7.0 (D-021), evaluated with the `lerobot-eval` wrapper in [`vla/libero_eval.py`](../vla/libero_eval.py) (D-023).
 
 1. **Baseline (done 2026-11-18):** run the checkpoint as stored (`native`: BF16 backbone with FP32 projections) and the `fp32`, `tf32` and `fp16` modes (D-022). Record LIBERO success rate over the four suites, in-loop and microbenchmark latency percentiles, and peak VRAM. Result: `native` scores 63.5% at 142.6 ms per chunk (p50, in-loop) and 923 MiB. Other precisions do not change success but are slower. Records are in [`results/phase1/`](../results/phase1/).
-2. **Optimize step by step,** with each step a separate result file:
+2. **Optimize step by step** (started 2026-11-18), with each step a separate result file. Policy config changes go through `--policy-override` (D-023):
    - quantization: INT8, then 4-bit;
    - TensorRT export of the vision encoder and action head (fallback: `torch.compile` plus quantization for the language backbone);
    - fewer denoising steps;
@@ -103,7 +103,7 @@ Model: `lerobot/smolvla_libero` through lerobot 0.7.0 (D-021), evaluated with th
 ```text
 SixGig/
 ├── README.md
-├── docs/            decisions.md, glossary.md, plan.md, progress.md
+├── docs/            commands.md, decisions.md, glossary.md, plan.md, progress.md
 ├── env/             conda environment files for linux-64 and osx-arm64
 ├── bench/           benchmark harness (Phase 0)
 ├── vla/             P1: baselines, export, quantization, MLX port

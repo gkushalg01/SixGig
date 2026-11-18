@@ -1,0 +1,29 @@
+# SixGig environment for the MacBook M4 Pro (macOS, Apple silicon, no CUDA).
+# DRAFT 2026-11-18: written on the RTX laptop and not yet created on the Mac.
+# Create:  conda env create -f env/osx-arm64.yml
+# Update:  conda env update -f env/osx-arm64.yml --prune
+# Decisions: D-007 (Python), D-011 (machine split), D-019 (MuJoCo), D-021 (lerobot).
+# ROS 2 Jazzy from RoboStack (D-010) is added when Phase 2/3 needs it.
+name: sixgig
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  - python=3.12
+  - pip
+  - ninja
+  - pip:
+      # Same torch as the RTX laptop (D-006); the macOS wheel uses the MPS backend instead of CUDA.
+      - torch==2.14.1
+      - torchvision==0.29.1
+      # LIBERO (hf-libero) pins robosuite 1.4.0 and mujoco<3.9 (D-019).
+      - mujoco==3.8.1
+      - lerobot[smolvla,libero]==0.7.0
+      - cmake>=3.29,<4.2
+      # Apple's array framework and its vision-language model package (Phase 1 MLX port, Phase 3 planner).
+      - mlx==0.32.4
+      - mlx-vlm==0.7.12
+      - numpy
+      - psutil
+      - matplotlib
+      - pytest

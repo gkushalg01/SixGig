@@ -4,19 +4,31 @@ Newest entries first. Each entry says what was done, what was found, and what co
 
 ## Resume here
 
-The next session starts from this list. Everything below it is history.
+The next session starts from this list. Everything below it is history. Frequently used commands are in [commands.md](./commands.md).
 
 1. **Activate the environment:** `conda activate sixgig` (or prefix commands with `conda run -n sixgig`), then `cd /home/ats/workspace/SixGig`. If `~/.libero/config.yaml` is missing, run `python scripts/setup_libero.py`.
-2. **Phase 1 baseline is done** (see the 2026-11-18 log entry below). `native` is the reference: 63.5% success, 142.6 ms p50 per chunk in the loop, 923 MiB peak.
-3. **Start Phase 1 optimization** ([plan.md](./plan.md), Phase 1 step 2). Each step gets its own result file, run with the full 400 episodes (about 35 to 40 minutes per run) and compared with the `native` records in `results/phase1/`. Suggested order, cheapest first:
-   - fewer denoising steps (`--policy.num_steps`, default 10);
-   - `n_action_steps` below 50, which may also raise success (D-021);
-   - `torch.compile`, then INT8 and 4-bit quantization, then TensorRT.
-
-   The wrapper needs a way to pass these policy overrides through to `lerobot-eval`.
+2. **Phase 1 baseline is done** (see the 2026-11-18 log entries below). `native` is the reference: 63.5% success, 142.6 ms p50 per chunk in the loop, 923 MiB peak.
+3. **Phase 1 optimization has started** ([plan.md](./plan.md), Phase 1 step 2). The wrapper now takes `--policy-override KEY=VALUE` (D-023). Each step gets its own result file, run with the full 400 episodes (about 35 to 40 minutes per run) and compared with `native` using `python scripts/summarize_results.py`. Order, cheapest first:
+   - fewer denoising steps: `num_steps=5` (running or done, see the log), then `num_steps=3` or `2` depending on its success rate;
+   - `n_action_steps` below 50 (try 25 and 10), which may also raise success (D-021);
+   - `torch.compile`, then INT8 and 4-bit quantization, then TensorRT. These need new wrapper hooks, not just config overrides.
 4. **Commit only from a clean tree before long runs.** Records capture the git state when they are saved, so editing tracked files during a run marks its records dirty.
+5. **Mac:** set up the environment now, in parallel with the RTX runs. See **Mac plan** below.
 
-Still open from Phase 0: ROS 2 (Phase 2) and the Mac environment.
+Still open from Phase 0: ROS 2 (Phase 2).
+
+## Mac plan
+
+What to run on the MacBook M4 Pro, and when. The Mac and the RTX laptop work in parallel until Phase 3.
+
+| When | Mac task | Depends on | Hands back to the RTX side |
+|------|----------|------------|----------------------------|
+| **Now** | Install Miniforge, clone the repo over SSH, create the environment from [`env/osx-arm64.yml`](../env/osx-arm64.yml) (draft), and run the Mac checks in [commands.md](./commands.md#mac-macbook-m4-pro): MPS, MLX, MuJoCo `cgl` rendering, harness tests | Nothing | Versions and any install errors, to finalize the env file and record the Mac environment in the docs |
+| After the environment works | SmolVLA on LIBERO with PyTorch on MPS: a latency-only check, then the full 400 episodes, as the Mac's reference point | The wrapper must accept `--device mps` and `MUJOCO_GL=cgl` (small change, done on request) | Mac baseline records for the Pareto chart |
+| After the Mac baseline | Port SmolVLA to MLX (Phase 1 step 3): the vision encoder and language backbone first through mlx-vlm, then the action expert; compare success and latency with MPS and with the RTX | Mac baseline | MLX records for the Pareto chart |
+| Before Phase 3 (can be done any time) | Install ROS 2 Jazzy from RoboStack into the Mac environment and check `ros2 topic list` (D-010) | Mac environment | Whether D-010 holds on macOS, or Phase 3 falls back to Zenoh |
+| Before Phase 3 | Connect the two machines with a wired LAN cable or adapter and measure round-trip time with `ping` | Nothing | Network latency for the Phase 3 budget (D-011) |
+| Phase 3 | Run the MuJoCo sim, camera rendering and the MLX planner on the Mac, talking to the RTX laptop | Phase 1 optimization, Phase 2 CUDA MPPI | — |
 
 ## Status
 
@@ -27,9 +39,9 @@ Still open from Phase 0: ROS 2 (Phase 2) and the Mac environment.
 | Set up the environment and benchmark harness (RTX laptop) | 0 | Done | — |
 | Install LIBERO | 1 | Done | — |
 | Install ROS 2 Jazzy from RoboStack (RTX laptop) | 2 | Pending | — |
-| Set up the Mac environment | 0 | Pending | Must be run on the Mac |
+| Set up the Mac environment | 0 | In progress: env file drafted, not yet created | Must be run on the Mac |
 | Baseline a small VLA | 1 | Done | — |
-| Optimize VLA inference | 1 | Pending | VLA baseline |
+| Optimize VLA inference | 1 | In progress | — |
 | Port the VLA to MLX | 1 | Pending | VLA baseline, Mac environment |
 | Build the CUDA MPPI controller | 2 | Pending | ROS 2 (for the node only; the CUDA library can start now) |
 | Integrate the dual-machine stack | 3 | Pending | VLA optimization, CUDA MPPI, Mac environment |
@@ -37,6 +49,22 @@ Still open from Phase 0: ROS 2 (Phase 2) and the Mac environment.
 | Write-up and demo | Final | Pending | Dual-machine integration |
 
 ## Log
+
+### 2026-11-18: Phase 1 optimization started: policy overrides, commands reference, Mac plan
+
+**Done**
+
+- Added `--policy-override KEY=VALUE` and `--tag` to [`vla/libero_eval.py`](../vla/libero_eval.py) (D-023). Overrides are forwarded to `lerobot-eval` as `--policy.KEY=VALUE`, and record names get a suffix such as `_num_steps5`.
+- Checked it with a latency-only run of `num_steps=5` into `results/tmp/dev/`: the record reports `denoise_steps: 5`, and the microbenchmark p50 fell from 145.9 ms to 80.0 ms. The 3 short episodes say nothing about success yet.
+- Added [`scripts/summarize_results.py`](../scripts/summarize_results.py), which prints one line per record: success, p50/p99, peak memory, denoising steps, `n_action_steps` and commit.
+- Added [commands.md](./commands.md), a reference of the commands used in the project.
+- Drafted [`env/osx-arm64.yml`](../env/osx-arm64.yml) for the Mac: Python 3.12, torch 2.14.1 (MPS), MuJoCo 3.8.1, lerobot 0.7.0, mlx 0.32.4 and mlx-vlm 0.7.12. All pinned versions have macOS arm64 wheels for Python 3.12 (torch needs macOS 14 or newer), and mlx-vlm's `transformers>=5.14` fits lerobot's `>=5.22,<5.23`. It has not been created on a Mac yet.
+- Added the **Mac plan** above.
+- Health check after resuming: `pip check` is clean, the 8 harness tests pass, and the quick smoke suite (`tmp/smoke`) passes 4/4 with numbers matching Phase 0.
+
+**Next**
+
+- See **Resume here** above.
 
 ### 2026-11-18: Phase 1 baseline: SmolVLA on LIBERO in four precision modes
 

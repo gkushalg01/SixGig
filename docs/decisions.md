@@ -369,6 +369,7 @@ Status values:
   - The hooks depend on lerobot internals (`make_policy`, `eval_policy_all` and `_get_action_chunk`). A lerobot upgrade may break them.
   - lerobot creates its output directory only as a side effect of saving videos, so the wrapper creates it itself.
   - Microbenchmark p50 runs 2% to 5% above in-loop p50 in every mode, likely because back-to-back calls keep the GPU under sustained load, while in the rollout it idles during the roughly 1 s of simulation between chunks. Compare modes within one measure, not across the two.
+  - **Added 2026-11-18:** `--policy-override KEY=VALUE` (repeatable) forwards `--policy.KEY=VALUE` to `lerobot-eval`, which applies it on top of the checkpoint config. Records are named `<mode>_<tag>`, where the tag defaults to the overrides (for example `smolvla_libero_eval_native_num_steps5`), and store the overrides in `params.policy_overrides`. Checked with `num_steps=5`: the record reports `denoise_steps: 5`.
 
 ## D-024: Non-interactive LIBERO setup
 

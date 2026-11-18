@@ -11,14 +11,18 @@ observation through `predict_action_chunk` to get clean latency statistics.
 
 Each run writes two harness records:
 
-    results/<suite>/smolvla_libero_eval_<precision>-<ts>.json     success + in-loop latency
-    results/<suite>/smolvla_chunk_latency_<precision>-<ts>.json   controlled latency
+    results/<suite>/smolvla_libero_eval_<precision>[_<tag>]-<ts>.json     success + in-loop latency
+    results/<suite>/smolvla_chunk_latency_<precision>[_<tag>]-<ts>.json   controlled latency
+
+Policy config fields can be overridden with --policy-override (repeatable). The tag
+defaults to the overrides, e.g. `num_steps5`, so each variant gets its own record name.
 
 Examples:
 
     python -m vla.libero_eval --precision fp32 --episodes 10
     python -m vla.libero_eval --precision native --suites libero_spatial --task-ids 0 --episodes 2 --results-suite tmp/dev
     python -m vla.libero_eval --precision fp16 --latency-only
+    python -m vla.libero_eval --precision native --policy-override num_steps=5 --latency-only --results-suite tmp/dev
 """
 
 from __future__ import annotations
@@ -82,6 +86,8 @@ def build_argv(args, output_dir: Path) -> list[str]:
     ]
     if args.revision:
         argv.insert(2, f"--policy.pretrained_revision={args.revision}")
+    # lerobot applies --policy.<field> flags on top of the config loaded from --policy.path.
+    argv += [f"--policy.{k}={v}" for k, v in args.policy_overrides.items()]
     if args.task_ids:
         argv.append(f"--env.task_ids=[{args.task_ids}]")
     if args.max_episode_steps:
@@ -132,7 +138,7 @@ def run(args) -> list[Path]:
     le.eval_policy_all = eval_policy_all
 
     stamp = time.strftime("%Y%m%dT%H%M%S")
-    lerobot_dir = REPO_ROOT / "results" / "tmp" / "lerobot-eval" / f"{args.precision}-{stamp}"
+    lerobot_dir = REPO_ROOT / "results" / "tmp" / "lerobot-eval" / f"{args.variant}-{stamp}"
     # lerobot only creates output_dir as a side effect of writing videos.
     lerobot_dir.mkdir(parents=True, exist_ok=True)
     argv = build_argv(args, lerobot_dir)
@@ -147,13 +153,14 @@ def run(args) -> list[Path]:
         "start_seed": args.seed,
         "batch_size": 1,
         "max_episode_steps": args.max_episode_steps,
+        "policy_overrides": args.policy_overrides,
         "mujoco_gl": os.environ.get("MUJOCO_GL"),
         "lerobot_argv": argv[1:],
     }
     paths = []
 
     torch.cuda.reset_peak_memory_stats()
-    name = f"smolvla_libero_eval_{precision.name}"
+    name = f"smolvla_libero_eval_{args.variant}"
     with Benchmark(name, suite=args.results_suite, params=params) as b:
         sys.argv = argv
         le.eval_main()
@@ -214,11 +221,13 @@ def microbenchmark(args, state: dict, precision) -> Path:
         "batch_size": 1,
         "input": "first LIBERO observation of the evaluation, after lerobot preprocessing",
         "chunk_size": cfg.chunk_size,
+        "n_action_steps": cfg.n_action_steps,
         "denoise_steps": cfg.num_steps,
+        "policy_overrides": args.policy_overrides,
     }
     torch.cuda.synchronize()
     torch.cuda.reset_peak_memory_stats()
-    with Benchmark(f"smolvla_chunk_latency_{precision.name}", suite=args.results_suite, params=params) as b:
+    with Benchmark(f"smolvla_chunk_latency_{args.variant}", suite=args.results_suite, params=params) as b:
         def infer():
             # Same grad mode as lerobot's rollout loop.
             with torch.inference_mode():
@@ -257,7 +266,24 @@ def main(argv=None) -> int:
     parser.add_argument("--latency-warmup", type=int, default=10)
     parser.add_argument("--latency-iters", type=int, default=100)
     parser.add_argument("--results-suite", default="phase1")
+    parser.add_argument(
+        "--policy-override",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help="override a policy config field, e.g. num_steps=5 or n_action_steps=10 (repeatable)",
+    )
+    parser.add_argument("--tag", default=None, help="record-name suffix (default: built from the overrides)")
     args = parser.parse_args(argv)
+
+    args.policy_overrides = {}
+    for item in args.policy_override:
+        key, sep, value = item.partition("=")
+        if not sep or not key:
+            parser.error(f"--policy-override expects KEY=VALUE, got {item!r}")
+        args.policy_overrides[key.removeprefix("policy.")] = value
+    tag = args.tag if args.tag is not None else "_".join(f"{k}{v}" for k, v in args.policy_overrides.items())
+    args.variant = f"{args.precision}_{tag}" if tag else args.precision
 
     if args.latency_only:
         # A successful episode can end after 2 chunks, so run enough episodes to exceed the in-loop warm-up.
