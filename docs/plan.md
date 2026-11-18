@@ -57,7 +57,7 @@ P3 (GPU-parallel RL) and P6 (Gaussian splatting SLAM) are out of scope (D-002).
 Model: `lerobot/smolvla_libero` through lerobot 0.7.0 (D-021), evaluated with the `lerobot-eval` wrapper in [`vla/libero_eval.py`](../vla/libero_eval.py) (D-023).
 
 1. **Baseline (done 2026-11-18):** run the checkpoint as stored (`native`: BF16 backbone with FP32 projections) and the `fp32`, `tf32` and `fp16` modes (D-022). Record LIBERO success rate over the four suites, in-loop and microbenchmark latency percentiles, and peak VRAM. Result: `native` scores 63.5% at 142.6 ms per chunk (p50, in-loop) and 923 MiB. Other precisions do not change success but are slower. Records are in [`results/phase1/`](../results/phase1/).
-2. **Optimize step by step** (started 2026-11-18), with each step a separate result file. Policy config changes go through `--policy-override` (D-023):
+2. **Optimize step by step** (started 2026-11-18), with each step a separate result file. Policy config changes go through `--policy-override` (D-023). Done so far: 5 denoising steps keep success (64.5%) and cut in-loop p50 to 91.3 ms. Steps:
    - quantization: INT8, then 4-bit;
    - TensorRT export of the vision encoder and action head (fallback: `torch.compile` plus quantization for the language backbone);
    - fewer denoising steps;

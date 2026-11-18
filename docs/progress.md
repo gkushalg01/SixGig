@@ -9,7 +9,7 @@ The next session starts from this list. Everything below it is history. Frequent
 1. **Activate the environment:** `conda activate sixgig` (or prefix commands with `conda run -n sixgig`), then `cd /home/ats/workspace/SixGig`. If `~/.libero/config.yaml` is missing, run `python scripts/setup_libero.py`.
 2. **Phase 1 baseline is done** (see the 2026-11-18 log entries below). `native` is the reference: 63.5% success, 142.6 ms p50 per chunk in the loop, 923 MiB peak.
 3. **Phase 1 optimization has started** ([plan.md](./plan.md), Phase 1 step 2). The wrapper now takes `--policy-override KEY=VALUE` (D-023). Each step gets its own result file, run with the full 400 episodes (about 35 to 40 minutes per run) and compared with `native` using `python scripts/summarize_results.py`. Order, cheapest first:
-   - fewer denoising steps: `num_steps=5` (running or done, see the log), then `num_steps=3` or `2` depending on its success rate;
+   - fewer denoising steps: `num_steps=5` is done (64.5% at 91.3 ms, see the log). Next run `num_steps=3`, which the fit predicts at about 62 ms, then `2` if success holds;
    - `n_action_steps` below 50 (try 25 and 10), which may also raise success (D-021);
    - `torch.compile`, then INT8 and 4-bit quantization, then TensorRT. These need new wrapper hooks, not just config overrides.
 4. **Commit only from a clean tree before long runs.** Records capture the git state when they are saved, so editing tracked files during a run marks its records dirty.
@@ -49,6 +49,28 @@ What to run on the MacBook M4 Pro, and when. The Mac and the RTX laptop work in 
 | Write-up and demo | Final | Pending | Dual-machine integration |
 
 ## Log
+
+### 2026-11-18: Phase 1 optimization 1: 5 denoising steps instead of 10
+
+**Done**
+
+- Ran the full 400-episode protocol with `--policy-override num_steps=5` in `native` precision, from commit `37f564c` with a clean tree. It took 32 minutes (4.8 s per episode). Records: `results/phase1/smolvla_*_native_num_steps5-*.json`.
+
+| Variant | Success (400 eps) | 95% interval | Spatial / Object / Goal / Long | In-loop p50 / p99 | Microbenchmark p50 / p99 | Peak allocated |
+|---------|-------------------|--------------|--------------------------------|-------------------|--------------------------|----------------|
+| `native` (10 steps, baseline) | 63.5% (254) | 58.7 to 68.1% | 61 / 69 / 73 / 51% | 142.6 / 158.3 ms | 145.9 / 147.9 ms | 923 MiB |
+| `native_num_steps5` | **64.5%** (258) | 59.7 to 69.0% | 61 / 68 / 76 / 53% | **91.3 / 96.7 ms** | 85.9 / 87.7 ms | 923 MiB |
+
+**Found**
+
+- **Success is unchanged:** 64.5% against 63.5%, with almost identical 95% intervals. The same `libero_spatial` task 5 scores 0/10 in both runs, so it is a checkpoint weakness, not noise.
+- **Latency drops 1.56× in the loop** (142.6 to 91.3 ms p50) **and 1.70× in the microbenchmark.** Memory is unchanged: the denoising loop reuses the same buffers.
+- **Cost model:** the two microbenchmark points fit about 26 ms of fixed cost (image encoding and the VLM prefix, run once per chunk with the KV cache) plus about 12 ms per denoising step. So 10 steps spend about 82% of the time in the action expert. This predicts about 62 ms for 3 steps and 50 ms for 2. Below that, the fixed prefix dominates, and quantization or TensorRT of the backbone is what helps.
+- **In-loop p50 is now above the microbenchmark** (91.3 against 85.9 ms), the reverse of the baseline (D-023). The gap is about 5 ms in both runs, in opposite directions, so the two measures should keep being reported separately.
+
+**Next**
+
+- See **Resume here** above.
 
 ### 2026-11-18: Phase 1 optimization started: policy overrides, commands reference, Mac plan
 
