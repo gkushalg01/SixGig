@@ -49,6 +49,7 @@ RENAME_MAP = {
 }
 # The first chunk calls include cuDNN autotuning and lazy CUDA initialization.
 IN_LOOP_WARMUP_CALLS = 3
+LATENCY_ONLY_EPISODES = 3
 
 
 def _clone_batch(batch: dict) -> dict:
@@ -218,8 +219,13 @@ def microbenchmark(args, state: dict, precision) -> Path:
     torch.cuda.synchronize()
     torch.cuda.reset_peak_memory_stats()
     with Benchmark(f"smolvla_chunk_latency_{precision.name}", suite=args.results_suite, params=params) as b:
+        def infer():
+            # Same grad mode as lerobot's rollout loop.
+            with torch.inference_mode():
+                return policy.predict_action_chunk(dict(batch))
+
         samples = b.measure(
-            lambda: policy.predict_action_chunk(dict(batch)),
+            infer,
             warmup=args.latency_warmup,
             iters=args.latency_iters,
             sync=torch.cuda.synchronize,
@@ -247,14 +253,15 @@ def main(argv=None) -> int:
     parser.add_argument("--seed", type=int, default=1000)
     parser.add_argument("--max-episode-steps", type=int, default=0)
     parser.add_argument("--videos", type=int, default=0, help="number of episodes to save as video")
-    parser.add_argument("--latency-only", action="store_true", help="one short episode, then the microbenchmark")
+    parser.add_argument("--latency-only", action="store_true", help="a few short episodes, then the microbenchmark")
     parser.add_argument("--latency-warmup", type=int, default=10)
     parser.add_argument("--latency-iters", type=int, default=100)
     parser.add_argument("--results-suite", default="phase1")
     args = parser.parse_args(argv)
 
     if args.latency_only:
-        args.suites, args.task_ids, args.episodes = "libero_spatial", "0", 1
+        # A successful episode can end after 2 chunks, so run enough episodes to exceed the in-loop warm-up.
+        args.suites, args.task_ids, args.episodes = "libero_spatial", "0", LATENCY_ONLY_EPISODES
         args.max_episode_steps = args.max_episode_steps or 4 * 50
     _check_libero_config()
     for path in run(args):
