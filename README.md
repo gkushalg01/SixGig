@@ -2,15 +2,17 @@
 
 SixGig is a robot manipulation stack, run entirely in simulation, that does real-time AI inference and control on a laptop RTX 4050 with 6 GB of VRAM. A MacBook M4 Pro hosts the simulator and a language-model task planner. Every performance claim is backed by a reproducible benchmark file in [`results/`](results/).
 
-> **Status:** Phase 0 is complete on the RTX laptop. The environment and benchmark harness work, and the smoke results are in [`results/phase0/`](results/phase0/). See [docs/progress.md](docs/progress.md).
+> **Status:** Phase 0 is complete on the RTX laptop. Phase 1 (VLA inference optimization) has started: LIBERO and SmolVLA are installed and the evaluation wrapper is written but not yet run. See [docs/progress.md](docs/progress.md), "Resume here".
 
 ## Quick start (RTX laptop)
 
 ```bash
 conda env create -f env/linux-64.yml
 conda activate sixgig
+python scripts/setup_libero.py    # once per machine: LIBERO config, no prompt
 python -m pytest bench/tests -q   # harness unit tests
 python -m bench.smoke             # Phase 0 smoke benchmarks -> results/phase0/
+python -m vla.libero_eval --precision native --latency-only --results-suite tmp/dev   # Phase 1 check
 ```
 
 Details are in [bench/README.md](bench/README.md).

@@ -28,6 +28,12 @@ Status values:
 | [D-016](#d-016-benchmark-harness-design) | Benchmark harness design | Accepted |
 | [D-017](#d-017-strongly-typed-tensorrt-networks) | Strongly typed TensorRT networks | Accepted |
 | [D-018](#d-018-no-copilot-co-author-trailer-in-commits) | No Copilot co-author trailer in commits | Accepted |
+| [D-019](#d-019-mujoco-381-for-libero-compatibility) | MuJoCo 3.8.1 for LIBERO compatibility | Accepted |
+| [D-020](#d-020-cmake-from-pip-not-conda) | CMake from pip, not conda | Accepted |
+| [D-021](#d-021-smolvla-libero-checkpoint-and-lerobot-070) | SmolVLA LIBERO checkpoint through lerobot 0.7.0 | Accepted |
+| [D-022](#d-022-precision-modes-convert-by-stored-dtype) | Precision modes convert by stored dtype | Proposed |
+| [D-023](#d-023-wrap-lerobot-eval-instead-of-reimplementing-it) | Wrap `lerobot-eval` instead of reimplementing it | Accepted |
+| [D-024](#d-024-non-interactive-libero-setup) | Non-interactive LIBERO setup | Accepted |
 
 ---
 
@@ -57,7 +63,7 @@ Status values:
 - **Date:** 2026-11-17
 - **Status:** Accepted
 - **Context:** The RTX 4050 has 6 GB of VRAM, which is below the documented minimum for Isaac Sim and Isaac Lab. The Mac has no CUDA at all.
-- **Decision:** Use MuJoCo (4.0.1 on PyPI as of 2026-11-17), plus a MuJoCo-based manipulation benchmark (LIBERO or equivalent).
+- **Decision:** Use MuJoCo (4.0.1 on PyPI as of 2026-11-17; pinned to 3.8.1 by D-019), plus a MuJoCo-based manipulation benchmark (LIBERO or equivalent).
 - **Alternatives considered:**
   - Isaac Sim or Isaac Lab. Rejected on VRAM.
   - Genesis or ManiSkill. Kept as fallbacks if LIBERO integration fails.
@@ -272,3 +278,99 @@ Status values:
 - **Decision:** Commits are authored by the user only, with no co-author trailer. The three earlier commits were rewritten with `git filter-branch --msg-filter` to remove it. The repository had no remote, and the rewritten tree was checked to be identical to the original.
 - **Alternatives considered:** None. This was a direct instruction.
 - **Consequences:** Commit hashes from before 2026-11-18 02:00 changed. The scaffold commit `4486bb6` is now `973e576`, and the driver-fix commit `738508c` is now `1398db3`.
+
+## D-019: MuJoCo 3.8.1 for LIBERO compatibility
+
+- **Date:** 2026-11-18
+- **Status:** Accepted. Supersedes the MuJoCo version in D-003.
+- **Context:** `hf-libero` 0.1.5, the LIBERO package lerobot installs, requires `mujoco<3.9` and `robosuite==1.4.0`. Phase 0 used MuJoCo 4.0.1.
+- **Decision:** Pin `mujoco==3.8.1`, the newest release below 3.9 with Python 3.12 wheels.
+- **Alternatives considered:**
+  - Keep MuJoCo 4 in a second environment just for the MPPI work. Two environments for one simulator adds friction with no current benefit.
+  - Patch LIBERO to accept MuJoCo 4. Untested against robosuite 1.4.0's rendering and physics.
+- **Consequences:**
+  - The Phase 0 smoke suite re-run on 3.8.1 (scratch suite `tmp/after-lerobot`) matched the 4.0.1 results, for example 106k steps per second for the 7-DoF arm.
+  - The Phase 0 records in `results/phase0/` stay as they are; they record MuJoCo 4.0.1 in their environment block.
+  - Revisit when LIBERO supports MuJoCo 4.
+
+## D-020: CMake from pip, not conda
+
+- **Date:** 2026-11-18
+- **Status:** Accepted
+- **Context:** lerobot 0.7.0 depends on the pip `cmake` package, pinned below 4.2. Installing it over conda's CMake 4.5 would leave two copies writing to the same `bin/cmake`.
+- **Decision:** Remove CMake from the conda part of [`env/linux-64.yml`](../env/linux-64.yml) and install `cmake>=3.29,<4.2` from pip. Installed version: 4.1.3.
+- **Alternatives considered:** Keep conda's CMake and let pip overwrite it. Then the environment file would not describe what is actually installed.
+- **Consequences:** Phase 2 CMake builds use CMake 4.1.3, which is new enough for CUDA 12.6 and sm_89.
+
+## D-021: SmolVLA LIBERO checkpoint through lerobot 0.7.0
+
+- **Date:** 2026-11-18
+- **Status:** Accepted. Refines D-004.
+- **Context:** D-004 chose a SmolVLA-class model. LIBERO success needs a checkpoint fine-tuned on LIBERO.
+- **Decision:**
+  - Policy: `lerobot/smolvla_libero` (Apache-2.0, about 450M parameters, 865 MiB file), pinned to Hub revision `a24f1f3804`.
+  - It was fine-tuned from `lerobot/smolvla_base` on the `lerobot/libero` dataset for 25k steps, with a SmolVLM2-500M backbone cut to 16 layers.
+  - It predicts 50-action chunks with 10 flow-matching steps, from two 256×256 cameras and an 8-dimensional state.
+  - Library: `lerobot[smolvla,libero]==0.7.0`. This pulled in transformers 5.22.2, robosuite 1.4.0 and hf-libero 0.1.5, and downgraded numpy to 2.2.6. `pip check` reports no conflicts.
+- **Alternatives considered:**
+  - `HuggingFaceVLA/smolvla_libero`. Fewer downloads, and it is not the checkpoint lerobot's own documentation uses.
+  - Larger VLAs such as pi0. Ruled out by D-004.
+- **Consequences:**
+  - The policy needs a camera rename map from LIBERO's names to its own: `observation.images.image` → `camera1` and `observation.images.image2` → `camera2`. Without it, `lerobot-eval` stops with "Checkpoint feature missing from the simulator".
+  - lerobot also installs `wandb`, which brings in `cwevals`, an evaluation client from CoreWeave. Neither is used by this project.
+
+## D-022: Precision modes convert by stored dtype
+
+- **Date:** 2026-11-18
+- **Status:** Proposed. The modes are implemented in [`vla/precision.py`](../vla/precision.py) but not yet verified on LIBERO.
+- **Context:**
+  - The checkpoint is already mixed precision. 446.8M parameters are BF16: the vision encoder, language model and action expert.
+  - 3.3M parameters are FP32: the state, action and time projections and some action-expert attention projections.
+  - A first attempt that cast the whole policy to BF16 failed with "mat1 and mat2 must have the same dtype": lerobot feeds FP32 state into the projection layers and does not cast inputs itself.
+- **Decision:** Convert parameters and buffers according to their stored dtype instead of casting the whole module. Four modes:
+
+  | Mode | Conversion |
+  |------|------------|
+  | `native` | none: the checkpoint as stored, BF16 backbone with FP32 projections |
+  | `fp32` | every tensor to FP32, TF32 off |
+  | `tf32` | every tensor to FP32, TF32 tensor-core matmuls on |
+  | `fp16` | BF16 tensors to FP16; FP32 projections unchanged |
+
+  `native` is the Phase 1 baseline, because it is how the model was trained and released. This replaces the plan's "FP32 and FP16 baseline" wording.
+- **Alternatives considered:** `torch.autocast`, through lerobot's `--policy.use_amp`. Autocast decides precision per operation, so the precision of each layer could not be stated, which conflicts with the explicit-precision approach of D-017.
+- **Consequences:**
+  - FP16 risks overflow in activations that were trained in BF16. Its success rate must be measured, not assumed.
+  - The FP32 projections stay FP32 in `fp16` mode, so mixed-dtype matmuls are still possible. Whether `fp16` runs at all is to be confirmed on the next run.
+
+## D-023: Wrap `lerobot-eval` instead of reimplementing it
+
+- **Date:** 2026-11-18
+- **Status:** Accepted
+- **Context:** Success rates are only comparable with published SmolVLA numbers if the environment setup, seeds, preprocessing and episode lengths match lerobot's.
+- **Decision:** [`vla/libero_eval.py`](../vla/libero_eval.py) calls lerobot's `eval_main` unchanged and adds three hooks:
+  1. **Precision:** after `make_policy`, convert the policy to the requested precision (D-022).
+  2. **In-loop timing:** wrap the policy's `_get_action_chunk` and time every chunk inference, with a CUDA synchronize before and after. The first 3 calls are treated as warm-up.
+  3. **Microbenchmark:** after the evaluation, replay the first real LIBERO observation through `predict_action_chunk` for 10 warm-up and 100 timed calls.
+
+  Each run writes two harness records, `smolvla_libero_eval_<mode>` and `smolvla_chunk_latency_<mode>`.
+
+  Evaluation settings:
+  - batch size 1 and `MUJOCO_GL=egl`;
+  - start seed 1000;
+  - default suites `libero_spatial`, `libero_object`, `libero_goal` and `libero_10`;
+  - lerobot's own output goes to the gitignored `results/tmp/lerobot-eval/`.
+- **Alternatives considered:** A custom LIBERO rollout loop. It would be easier to time, but its success rates could not be compared with lerobot's.
+- **Consequences:**
+  - The hooks depend on lerobot internals (`make_policy`, `eval_policy_all` and `_get_action_chunk`). A lerobot upgrade may break them.
+  - lerobot creates its output directory only as a side effect of saving videos, so the wrapper creates it itself.
+
+## D-024: Non-interactive LIBERO setup
+
+- **Date:** 2026-11-18
+- **Status:** Accepted
+- **Context:** On first import, `libero.libero` asks a question on stdin when `~/.libero/config.yaml` is missing. Under `conda run` or any script, that fails with `EOFError`.
+- **Decision:** [`scripts/setup_libero.py`](../scripts/setup_libero.py) writes the same default config without importing LIBERO, and `vla/libero_eval.py` refuses to run if the config is missing.
+- **Alternatives considered:** Piping "N" into the first import. This is fragile and hides the setup step.
+- **Consequences:**
+  - The setup script must be run once per machine.
+  - LIBERO downloads its scene assets to `~/.cache/libero/assets` the first time an environment is built.

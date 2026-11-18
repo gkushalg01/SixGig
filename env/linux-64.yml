@@ -18,7 +18,7 @@ dependencies:
   # Host compilers: nvcc 12.6 supports GCC up to 13.
   - gxx_linux-64=13
   - gcc_linux-64=13
-  - cmake>=3.28
+  # cmake comes from pip (lerobot pins it below 4.2); a conda copy would be overwritten (D-020).
   - ninja
   - pip:
       - --extra-index-url https://download.pytorch.org/whl/cu126
@@ -26,7 +26,11 @@ dependencies:
       - torch==2.14.1+cu126
       - torchvision==0.29.1+cu126
       - tensorrt-cu12==11.4.0.106
-      - mujoco==4.0.1
+      # LIBERO (hf-libero) pins robosuite 1.4.0 and mujoco<3.9 (D-019).
+      - mujoco==3.8.1
+      # VLA policies and the LIBERO benchmark (D-021). lerobot pins numpy<2.3 and cmake<4.2.
+      - lerobot[smolvla,libero]==0.7.0
+      - cmake>=3.29,<4.2
       - numpy
       - nvidia-ml-py
       - psutil

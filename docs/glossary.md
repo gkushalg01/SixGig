@@ -12,7 +12,12 @@ Terms for everything this project implements or depends on. Each entry says what
 ## Models and learning
 
 - **VLA (vision-language-action model):** a model that maps camera images and a language instruction to robot actions. Optimized in Phase 1.
-- **SmolVLA:** a small open VLA of about 0.5B parameters, supported by lerobot. It is the primary candidate under D-004.
+- **SmolVLA:** a small open VLA of about 0.5B parameters, supported by lerobot. This project uses the LIBERO fine-tune `lerobot/smolvla_libero` (D-021). It is built on SmolVLM2-500M, truncated to 16 layers, plus a smaller "action expert" transformer that generates actions.
+- **Action expert:** the part of SmolVLA that turns the backbone's features into an action chunk by flow matching. It attends to the backbone's cached keys and values.
+- **Mixed-precision checkpoint:** a model whose stored weights use more than one dtype. SmolVLA stores 446.8M parameters in BF16 and 3.3M in FP32. See D-022.
+- **Precision modes `native` / `fp32` / `tf32` / `fp16`:** how a VLA's weights are converted before inference, defined in [`vla/precision.py`](../vla/precision.py). See D-022.
+- **In-loop latency vs microbenchmark latency:** in-loop latency is each action-chunk inference timed during real LIBERO episodes. The microbenchmark replays one real observation many times in isolation. See D-023.
+- **Wilson interval:** the 95% confidence interval lerobot reports for success rates. With few episodes it is wide: 2/2 successes gives 34% to 100%.
 - **VLM (vision-language model):** a model that reasons over images and text. Used as the task planner on the Mac in Phase 3.
 - **Action chunking:** predicting a short sequence of future actions in one inference instead of one action per step.
 - **Asynchronous action chunking:** computing the next chunk while the robot executes the current one, which hides inference latency. Phase 1.
@@ -60,8 +65,15 @@ Terms for everything this project implements or depends on. Each entry says what
 
 ## Simulation and robotics middleware
 
-- **MuJoCo:** the physics simulator used for all tasks. See D-003.
-- **LIBERO:** a MuJoCo-based suite of language-conditioned manipulation tasks, used to measure task success.
+- **MuJoCo:** the physics simulator used for all tasks. Version 3.8.1, pinned for LIBERO. See D-003 and D-019.
+- **LIBERO:** a MuJoCo-based suite of language-conditioned manipulation tasks on a simulated Franka arm, used to measure task success. Its four standard suites, each with 10 tasks, are `libero_spatial`, `libero_object`, `libero_goal` and `libero_10` (long-horizon).
+- **robosuite:** the robot-simulation framework that LIBERO builds on. Version 1.4.0.
+- **hf-libero:** the Hugging Face packaging of LIBERO that lerobot installs. It downloads scene assets on first use. See D-024.
+- **lerobot:** Hugging Face's robot-learning library. It provides SmolVLA, the LIBERO integration and `lerobot-eval`. Version 0.7.0, see D-021.
+- **`lerobot-eval`:** lerobot's policy-evaluation command. SixGig wraps it rather than reimplementing it. See D-023.
+- **Rename map:** a mapping from environment observation names to the names a policy was trained on, such as `observation.images.image` → `observation.images.camera1`.
+- **`MUJOCO_GL=egl`:** tells MuJoCo to render offscreen on the GPU through EGL, with no window. Needed for headless evaluation.
+- **Seed:** the number that fixes an episode's initial scene and noise. Episode *i* uses seed 1000 + *i*, so runs are comparable.
 - **ROS 2:** robot middleware for nodes, topics and services. Version Jazzy, see D-010.
 - **RoboStack:** conda-forge packages of ROS 2 that work on Linux and macOS.
 - **Composable nodes / intra-process communication:** running several ROS 2 nodes in one process so messages pass by pointer instead of being copied. Used for zero-copy in P4.

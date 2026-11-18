@@ -2,6 +2,32 @@
 
 Newest entries first. Each entry says what was done, what was found, and what comes next. Decision IDs refer to [decisions.md](./decisions.md).
 
+## Resume here
+
+The next session starts from this list. Everything below it is history.
+
+1. **Activate the environment:** `conda activate sixgig` (or prefix commands with `conda run -n sixgig`), then `cd /home/ats/workspace/SixGig`. If `~/.libero/config.yaml` is missing, run `python scripts/setup_libero.py`.
+2. **Test the evaluation wrapper**, which has not completed a run yet:
+
+   ```bash
+   for p in native fp16 fp32; do
+     python -m vla.libero_eval --precision $p --latency-only --results-suite tmp/dev
+   done
+   ```
+
+   Each run should print two lines, `smolvla_libero_eval_<mode>` and `smolvla_chunk_latency_<mode>`.
+
+   Two fixes since the last attempt are untested:
+   - precision modes that convert by stored dtype (D-022);
+   - the wrapper now creates lerobot's output directory itself (D-023).
+
+   Watch `fp16` for mixed-dtype matmul errors in the FP32 projection layers.
+3. **Delete the stale dev records** in `results/tmp/dev/` (`bf16`, `native` and `fp16`, from failed runs), so they are not mistaken for results.
+4. **Run the Phase 1 baseline:** `python -m vla.libero_eval --precision native --episodes 10`. That is 4 suites × 10 tasks × 10 episodes = 400 episodes, a few hours at about 1 minute per episode. Do `native` first, then `fp32`, `tf32` and `fp16`. For a shorter pass, use `--episodes 5`.
+5. **Update this file, the plan and the decisions** with the results. D-022 moves from Proposed to Accepted once all four modes run.
+
+Still open from Phase 0: ROS 2 (Phase 2) and the Mac environment.
+
 ## Status
 
 | Todo | Phase | Status | Blocked by |
@@ -9,10 +35,10 @@ Newest entries first. Each entry says what was done, what was found, and what co
 | Fix the GPU driver (user action) | 0 | Done | — |
 | Scaffold the repo and documents | 0 | Done | — |
 | Set up the environment and benchmark harness (RTX laptop) | 0 | Done | — |
-| Install LIBERO | 1 | Pending | — |
+| Install LIBERO | 1 | Done | — |
 | Install ROS 2 Jazzy from RoboStack (RTX laptop) | 2 | Pending | — |
-| Set up the Mac environment | 0 | Pending | Repo scaffold |
-| Baseline a small VLA | 1 | Pending | LIBERO |
+| Set up the Mac environment | 0 | Pending | Must be run on the Mac |
+| Baseline a small VLA | 1 | In progress | — |
 | Optimize VLA inference | 1 | Pending | VLA baseline |
 | Port the VLA to MLX | 1 | Pending | VLA baseline, Mac environment |
 | Build the CUDA MPPI controller | 2 | Pending | ROS 2 (for the node only; the CUDA library can start now) |
@@ -21,6 +47,39 @@ Newest entries first. Each entry says what was done, what was found, and what co
 | Write-up and demo | Final | Pending | Dual-machine integration |
 
 ## Log
+
+### 2026-11-18: Phase 1 started: LIBERO, SmolVLA and the evaluation wrapper (paused)
+
+**Done**
+
+- Installed `lerobot[smolvla,libero]==0.7.0` into `sixgig`.
+  - It brought transformers 5.22.2, robosuite 1.4.0, hf-libero 0.1.5 and accelerate 1.16.
+  - numpy went from 2.5.5 to 2.2.6, and MuJoCo was pinned to 3.8.1 (D-019).
+  - `pip check` is clean, and [`env/linux-64.yml`](../env/linux-64.yml) is updated.
+- Moved CMake from conda to pip, 4.1.3 (D-020).
+- Re-ran the Phase 0 smoke suite after the install into the scratch suite `tmp/after-lerobot`. All four pass, with numbers matching Phase 0.
+- Added [`scripts/setup_libero.py`](../scripts/setup_libero.py), which writes LIBERO's config without the stdin prompt (D-024).
+- Chose the policy `lerobot/smolvla_libero`, pinned to revision `a24f1f3804` (D-021).
+- Checked the stock pipeline end to end with plain `lerobot-eval` on `libero_spatial` task 0, 2 episodes and seed 1000: **2/2 successes** (Wilson 95% interval 34% to 100%).
+  - The evaluation took 127 s, about 63 s per episode including model load and warm-up.
+  - Rollout ran at about 45 to 49 environment steps per second, and the second episode succeeded around step 79.
+  - Output is in `results/tmp/lerobot-eval-check/run3/`, with 2 videos.
+- Wrote the Phase 1 code (D-022, D-023). It has not yet completed a run:
+  - [`vla/precision.py`](../vla/precision.py): precision modes.
+  - [`vla/libero_eval.py`](../vla/libero_eval.py): wraps `lerobot-eval`, adds in-loop chunk timing and a microbenchmark, and writes harness records.
+- Downloads so far: about 2.8 GB in the Hugging Face cache (checkpoint and SmolVLM2 tokenizer files) plus LIBERO assets in `~/.cache/libero/assets`. About 56 GB of disk is free.
+
+**Found**
+
+- **LIBERO prompts on first import:** it asks on stdin and fails under `conda run`. Fixed by D-024.
+- **Camera names don't match:** `lerobot-eval` needs the camera rename map (D-021), or it stops with "Checkpoint feature missing from the simulator".
+- **Checkpoint is mixed precision:** 446.8M parameters are BF16 and 3.3M are FP32 (projections). Casting the whole policy to BF16 failed with "mat1 and mat2 must have the same dtype". Led to D-022.
+- **Output directory:** lerobot creates its output directory only when it saves videos. With videos disabled, writing `task_descriptions.json` failed. Fixed in the wrapper, not yet re-run.
+- **Model config:** chunk size 50, `n_action_steps` 50, 10 flow-matching steps, KV cache on (`use_cache`), 512×512 padded image resize. These are the defaults Phase 1 starts optimizing from.
+
+**Next**
+
+- See **Resume here** above.
 
 ### 2026-11-18: Phase 0 environment and benchmark harness
 

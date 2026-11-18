@@ -46,7 +46,7 @@ P3 (GPU-parallel RL) and P6 (Gaussian splatting SLAM) are out of scope (D-002).
 - **Driver fix (done 2026-11-18):** the NVIDIA driver loads and `nvidia-smi` shows the RTX 4050 (D-014, D-015).
 - **Done 2026-11-18:** created the `sixgig` conda environment from [`env/linux-64.yml`](../env/linux-64.yml) with Python 3.12 (D-007), torch 2.14.1+cu126 (D-006), the conda-forge CUDA 12.6 toolkit (D-008) and TensorRT 11.4 (D-009).
 - **Done 2026-11-18:** built the benchmark harness in [`bench/`](../bench/) (D-016). All four smoke workloads pass and their records are in [`results/phase0/`](../results/phase0/).
-- **Remaining:** LIBERO (D-003), which moves to the start of Phase 1 where it is first used.
+- **Remaining:** LIBERO (D-003). Done 2026-11-18 at the start of Phase 1 (D-019, D-021, D-024).
 - **Remaining:** ROS 2 Jazzy from RoboStack (D-010), which moves to the start of Phase 2 where the MPPI node first needs it.
 - **Remaining:** the Mac environment (conda, MLX, mlx-vlm, MuJoCo, RoboStack), which has to be run on the Mac.
 
@@ -54,7 +54,9 @@ P3 (GPU-parallel RL) and P6 (Gaussian splatting SLAM) are out of scope (D-002).
 
 ### Phase 1 (P1): VLA inference optimization
 
-1. **Baseline:** run a small VLA (D-004) in PyTorch at FP32 and FP16. Record LIBERO success rate, latency percentiles and peak VRAM.
+Model: `lerobot/smolvla_libero` through lerobot 0.7.0 (D-021), evaluated with the `lerobot-eval` wrapper in [`vla/libero_eval.py`](../vla/libero_eval.py) (D-023).
+
+1. **Baseline:** run the checkpoint as stored (`native`: BF16 backbone with FP32 projections) and the `fp32`, `tf32` and `fp16` modes (D-022). Record LIBERO success rate over the four suites, in-loop and microbenchmark latency percentiles, and peak VRAM.
 2. **Optimize step by step,** with each step a separate result file:
    - quantization: INT8, then 4-bit;
    - TensorRT export of the vision encoder and action head (fallback: `torch.compile` plus quantization for the language backbone);
