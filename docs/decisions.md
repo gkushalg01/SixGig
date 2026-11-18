@@ -31,7 +31,7 @@ Status values:
 | [D-019](#d-019-mujoco-381-for-libero-compatibility) | MuJoCo 3.8.1 for LIBERO compatibility | Accepted |
 | [D-020](#d-020-cmake-from-pip-not-conda) | CMake from pip, not conda | Accepted |
 | [D-021](#d-021-smolvla-libero-checkpoint-and-lerobot-070) | SmolVLA LIBERO checkpoint through lerobot 0.7.0 | Accepted |
-| [D-022](#d-022-precision-modes-convert-by-stored-dtype) | Precision modes convert by stored dtype | Proposed |
+| [D-022](#d-022-precision-modes-convert-by-stored-dtype) | Precision modes convert by stored dtype | Accepted |
 | [D-023](#d-023-wrap-lerobot-eval-instead-of-reimplementing-it) | Wrap `lerobot-eval` instead of reimplementing it | Accepted |
 | [D-024](#d-024-non-interactive-libero-setup) | Non-interactive LIBERO setup | Accepted |
 
@@ -318,11 +318,13 @@ Status values:
 - **Consequences:**
   - The policy needs a camera rename map from LIBERO's names to its own: `observation.images.image` → `camera1` and `observation.images.image2` → `camera2`. Without it, `lerobot-eval` stops with "Checkpoint feature missing from the simulator".
   - lerobot also installs `wandb`, which brings in `cwevals`, an evaluation client from CoreWeave. Neither is used by this project.
+  - Revision `a24f1f3804` is the Hub PR #1 fix that corrected the state width (6 to 8) and camera metadata. It is the latest commit on `main` as of 2026-11-18.
+  - Measured success under lerobot's documented protocol is 63.5%, well below the SmolVLA paper's LIBERO numbers (around 87% average). The rename map and policy settings match the checkpoint's `train_config.json` (chunk size 50, `n_action_steps` 50, 10 denoising steps), and no lerobot-published number for this checkpoint was found. Phase 1 measures changes relative to this baseline. Executing fewer actions per chunk, as lerobot's Pi0.5 reproduction does with `n_action_steps=10`, is a candidate to test.
 
 ## D-022: Precision modes convert by stored dtype
 
 - **Date:** 2026-11-18
-- **Status:** Proposed. The modes are implemented in [`vla/precision.py`](../vla/precision.py) but not yet verified on LIBERO.
+- **Status:** Accepted 2026-11-18, after all four modes completed the 400-episode LIBERO baseline. Implemented in [`vla/precision.py`](../vla/precision.py).
 - **Context:**
   - The checkpoint is already mixed precision. 446.8M parameters are BF16: the vision encoder, language model and action expert.
   - 3.3M parameters are FP32: the state, action and time projections and some action-expert attention projections.
@@ -340,7 +342,8 @@ Status values:
 - **Alternatives considered:** `torch.autocast`, through lerobot's `--policy.use_amp`. Autocast decides precision per operation, so the precision of each layer could not be stated, which conflicts with the explicit-precision approach of D-017.
 - **Consequences:**
   - FP16 risks overflow in activations that were trained in BF16. Its success rate must be measured, not assumed.
-  - The FP32 projections stay FP32 in `fp16` mode, so mixed-dtype matmuls are still possible. Whether `fp16` runs at all is to be confirmed on the next run.
+  - **Verified 2026-11-18:** all four modes run. `fp16` converts the 446.8M BF16 parameters and keeps the 3.3M FP32 ones, with no mixed-dtype errors.
+  - **Measured:** precision does not change task success. All four success rates fall between 61.5% and 63.7%, with overlapping 95% intervals. `native` is the fastest mode, so it stays the baseline. Full numbers are in [progress.md](./progress.md).
 
 ## D-023: Wrap `lerobot-eval` instead of reimplementing it
 
@@ -350,7 +353,9 @@ Status values:
 - **Decision:** [`vla/libero_eval.py`](../vla/libero_eval.py) calls lerobot's `eval_main` unchanged and adds three hooks:
   1. **Precision:** after `make_policy`, convert the policy to the requested precision (D-022).
   2. **In-loop timing:** wrap the policy's `_get_action_chunk` and time every chunk inference, with a CUDA synchronize before and after. The first 3 calls are treated as warm-up.
-  3. **Microbenchmark:** after the evaluation, replay the first real LIBERO observation through `predict_action_chunk` for 10 warm-up and 100 timed calls.
+  3. **Microbenchmark:** after the evaluation, replay the first real LIBERO observation through `predict_action_chunk` for 10 warm-up and 100 timed calls, under `torch.inference_mode()` like lerobot's rollout loop.
+
+  `--latency-only` runs 3 episodes of at most 200 steps on `libero_spatial` task 0. A successful episode can end after 2 chunk inferences, and one episode would not get past the 3 warm-up calls.
 
   Each run writes two harness records, `smolvla_libero_eval_<mode>` and `smolvla_chunk_latency_<mode>`.
 
@@ -363,6 +368,7 @@ Status values:
 - **Consequences:**
   - The hooks depend on lerobot internals (`make_policy`, `eval_policy_all` and `_get_action_chunk`). A lerobot upgrade may break them.
   - lerobot creates its output directory only as a side effect of saving videos, so the wrapper creates it itself.
+  - Microbenchmark p50 runs 2% to 5% above in-loop p50 in every mode, likely because back-to-back calls keep the GPU under sustained load, while in the rollout it idles during the roughly 1 s of simulation between chunks. Compare modes within one measure, not across the two.
 
 ## D-024: Non-interactive LIBERO setup
 

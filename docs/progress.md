@@ -7,24 +7,14 @@ Newest entries first. Each entry says what was done, what was found, and what co
 The next session starts from this list. Everything below it is history.
 
 1. **Activate the environment:** `conda activate sixgig` (or prefix commands with `conda run -n sixgig`), then `cd /home/ats/workspace/SixGig`. If `~/.libero/config.yaml` is missing, run `python scripts/setup_libero.py`.
-2. **Test the evaluation wrapper**, which has not completed a run yet:
+2. **Phase 1 baseline is done** (see the 2026-11-18 log entry below). `native` is the reference: 63.5% success, 142.6 ms p50 per chunk in the loop, 923 MiB peak.
+3. **Start Phase 1 optimization** ([plan.md](./plan.md), Phase 1 step 2). Each step gets its own result file, run with the full 400 episodes (about 35 to 40 minutes per run) and compared with the `native` records in `results/phase1/`. Suggested order, cheapest first:
+   - fewer denoising steps (`--policy.num_steps`, default 10);
+   - `n_action_steps` below 50, which may also raise success (D-021);
+   - `torch.compile`, then INT8 and 4-bit quantization, then TensorRT.
 
-   ```bash
-   for p in native fp16 fp32; do
-     python -m vla.libero_eval --precision $p --latency-only --results-suite tmp/dev
-   done
-   ```
-
-   Each run should print two lines, `smolvla_libero_eval_<mode>` and `smolvla_chunk_latency_<mode>`.
-
-   Two fixes since the last attempt are untested:
-   - precision modes that convert by stored dtype (D-022);
-   - the wrapper now creates lerobot's output directory itself (D-023).
-
-   Watch `fp16` for mixed-dtype matmul errors in the FP32 projection layers.
-3. **Delete the stale dev records** in `results/tmp/dev/` (`bf16`, `native` and `fp16`, from failed runs), so they are not mistaken for results.
-4. **Run the Phase 1 baseline:** `python -m vla.libero_eval --precision native --episodes 10`. That is 4 suites × 10 tasks × 10 episodes = 400 episodes, a few hours at about 1 minute per episode. Do `native` first, then `fp32`, `tf32` and `fp16`. For a shorter pass, use `--episodes 5`.
-5. **Update this file, the plan and the decisions** with the results. D-022 moves from Proposed to Accepted once all four modes run.
+   The wrapper needs a way to pass these policy overrides through to `lerobot-eval`.
+4. **Commit only from a clean tree before long runs.** Records capture the git state when they are saved, so editing tracked files during a run marks its records dirty.
 
 Still open from Phase 0: ROS 2 (Phase 2) and the Mac environment.
 
@@ -38,7 +28,7 @@ Still open from Phase 0: ROS 2 (Phase 2) and the Mac environment.
 | Install LIBERO | 1 | Done | — |
 | Install ROS 2 Jazzy from RoboStack (RTX laptop) | 2 | Pending | — |
 | Set up the Mac environment | 0 | Pending | Must be run on the Mac |
-| Baseline a small VLA | 1 | In progress | — |
+| Baseline a small VLA | 1 | Done | — |
 | Optimize VLA inference | 1 | Pending | VLA baseline |
 | Port the VLA to MLX | 1 | Pending | VLA baseline, Mac environment |
 | Build the CUDA MPPI controller | 2 | Pending | ROS 2 (for the node only; the CUDA library can start now) |
@@ -47,6 +37,42 @@ Still open from Phase 0: ROS 2 (Phase 2) and the Mac environment.
 | Write-up and demo | Final | Pending | Dual-machine integration |
 
 ## Log
+
+### 2026-11-18: Phase 1 baseline: SmolVLA on LIBERO in four precision modes
+
+**Done**
+
+- Got the evaluation wrapper working (D-023). The output-directory fix and the stored-dtype precision modes (D-022) both worked on the first run.
+- Fixed `--latency-only`: one episode can succeed after 2 chunk inferences, fewer than the 3 warm-up calls, so it now runs 3 short episodes.
+- The microbenchmark now runs under `torch.inference_mode()`, like lerobot's rollout loop. This made no measurable difference.
+- Ran latency-only checks for all four modes into the gitignored `results/tmp/dev/` and deleted the records of the earlier failed runs.
+- Ran the full baseline: 4 suites × 10 tasks × 10 episodes = 400 episodes per mode, seed 1000, batch size 1. Each mode took 34 to 40 minutes, about 5 to 6 s per episode, and 2.5 hours in total. On AC power, with no other GPU load.
+- Records are in [`results/phase1/`](../results/phase1/), two per mode, all with a clean tree. They were produced from commit `8c7d1ce`. After the runs, that commit was reworded to `33e4f24` to remove a co-author trailer (D-018). The tree is identical.
+- D-022 is now Accepted. D-021 and D-023 have new consequences.
+
+**Phase 1 baseline results (RTX 4050 Laptop, 60 W cap)**
+
+| Mode | Success (400 eps) | 95% interval | Spatial / Object / Goal / Long | In-loop p50 / p99 | Microbenchmark p50 / p99 | Peak allocated |
+|------|-------------------|--------------|--------------------------------|-------------------|--------------------------|----------------|
+| `native` (BF16 + FP32 projections) | **63.5%** (254) | 58.7 to 68.1% | 61 / 69 / 73 / 51% | **142.6 / 158.3 ms** | 145.9 / 147.9 ms | **923 MiB** |
+| `fp16` | 61.5% (246) | 56.6 to 66.1% | 59 / 64 / 75 / 48% | 148.3 / 168.1 ms | 155.7 / 159.4 ms | 975 MiB |
+| `tf32` | 63.0% (252) | 58.2 to 67.6% | 59 / 70 / 80 / 43% | 180.3 / 201.6 ms | 185.9 / 190.4 ms | 1797 MiB |
+| `fp32` | 63.7% (255) | 58.9 to 68.3% | 65 / 67 / 74 / 49% | 208.6 / 225.6 ms | 218.6 / 232.3 ms | 1797 MiB |
+
+Each in-loop row has about 1,960 timed chunk inferences, after discarding 3 warm-up calls. The microbenchmark uses 100 calls after 10 warm-up calls.
+
+**Found**
+
+- **Precision does not affect success.** All four 95% intervals overlap, and the spread between modes (2.2 points) is well inside the interval width.
+- **`native` BF16 is the fastest and smallest.** `fp32` is 1.46× slower and `tf32` 1.26× slower. They also double the memory. `fp32` hit the 60 W power cap at 90 °C in the microbenchmark.
+- **FP16 brings nothing over BF16** on Ada. It is 4% slower and uses 52 MiB more, presumably from casts at the FP32 projection boundaries. There is no reason to prefer it.
+- **Inference is a small part of rollout time.** One chunk inference (about 143 ms) covers 50 environment steps, which take about 1.1 s at 45 steps/s. Optimizing latency matters for real-time control rate, not for evaluation time.
+- **Success is well below the SmolVLA paper.** Our 63.5% compares with about 87% average in the paper. `libero_10` (long-horizon) is weakest at 51%, and one `libero_spatial` task scored 0/10. The checkpoint revision, rename map and policy settings all match the training config (D-021), so this is recorded as the measured baseline, not a setup bug.
+- **Microbenchmark vs in-loop:** the microbenchmark p50 is consistently 2 to 5% higher than in-loop p50 (D-023). The 3-sample in-loop numbers from latency-only checks vary by ±10 ms, so they only show that a mode runs.
+
+**Next**
+
+- See **Resume here** above.
 
 ### 2026-11-18: Phase 1 started: LIBERO, SmolVLA and the evaluation wrapper (paused)
 
